@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>ICD-10 External Cause 索引（EXTERNAL_idx + ICD10_desc）</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f7;
+      color: #222;
+    }
+    header {
+      padding: 16px 24px;
+      background: #1f2933;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.3rem;
+    }
+    header p {
+      margin: 0;
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    main {
+      padding: 16px 24px 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .layout {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .index-panel {
+      flex: 0 0 40%;
+      min-width: 280px;
+    }
+    .content-panel {
+      flex: 1 1 0;
+    }
+    section.card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+    .section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .badge {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      color: #374151;
+    }
+    label {
+      font-size: 0.88rem;
+      display: inline-block;
+      margin-bottom: 4px;
+    }
+    input[type="file"] {
+      margin-top: 4px;
+    }
+    .status {
+      margin-top: 6px;
+      font-size: 0.85rem;
+      color: #4b5563;
+      white-space: pre-line;
+    }
+    .status.error {
+      color: #b91c1c;
+    }
+    .status.success {
+      color: #065f46;
+    }
+    .small-note {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-top: 4px;
+      white-space: pre-line;
+    }
+
+    /* 左邊樹狀 + 搜尋 */
+    #idxSearch {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+    }
+    #idxSearch:disabled {
+      background: #f3f4f6;
+      color: #9ca3af;
+    }
+    #treeContainer {
+      max-height: 650px;
+      overflow-y: auto;
+      font-size: 0.82rem;
+      border-top: 1px solid #e5e7eb;
+      margin-top: 6px;
+      padding-top: 4px;
+    }
+    .tree-root {
+      list-style: none;
+      padding-left: 0;
+      margin: 0;
+    }
+    .tree-root ul {
+      list-style: none;
+      padding-left: 18px;
+      margin: 0;
+    }
+    .tree-node-label {
+      cursor: pointer;
+      padding: 2px 4px 2px 14px;
+      margin: 1px 0;
+      border-radius: 4px;
+      position: relative;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tree-node-label:hover {
+      background: #e5f0ff;
+    }
+    .tree-node-label.selected {
+      background: #2563eb;
+      color: #fff;
+    }
+    .tree-node-label.has-children::before {
+      content: "▸";
+      position: absolute;
+      left: 2px;
+      top: 3px;
+      font-size: 0.7rem;
+      color: #4b5563;
+    }
+    .tree-node-label.expanded.has-children::before {
+      content: "▾";
+    }
+    .tree-node-label.leaf::before {
+      content: "•";
+      position: absolute;
+      left: 4px;
+      top: 4px;
+      font-size: 0.6rem;
+      color: #9ca3af;
+    }
+    .tree-node-text-main {
+      font-weight: 500;
+    }
+    .tree-node-text-sub {
+      opacity: 0.85;
+    }
+    .tree-children.collapsed {
+      display: none;
+    }
+    .tree-icd-code {
+      font-family: "Consolas","Menlo",monospace;
+      font-weight: 600;
+      margin-left: 4px;
+    }
+    .tree-memo-see {
+      color: #b91c1c; /* see/use 標紅 */
+    }
+
+    /* 右邊內容 */
+    .detail-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .detail-block {
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+    }
+    .detail-block code {
+      font-family: "Consolas","Menlo",monospace;
+      font-weight: 600;
+    }
+    select.icd-select {
+      min-width: 320px;
+      max-width: 100%;
+      padding: 4px 6px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      font-size: 0.85rem;
+    }
+    .copy-btn {
+      font-size: 0.8rem;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      cursor: pointer;
+      margin-left: 8px;
+      white-space: nowrap;
+    }
+    .copy-btn:hover {
+      background: #e5f0ff;
+      border-color: #2563eb;
+    }
+    .longdes-box {
+      margin-top: 10px;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      font-size: 0.84rem;
+      max-height: 260px;
+      overflow-y: auto;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>ICD-10 External Cause 索引</h1>
+  <p>EXTERNAL_idx 樹狀結構 + ICD10_desc 延伸碼（依 Flag=TRUE 下拉選擇）。</p>
+</header>
+
+<main>
+  <div class="layout">
+    <!-- 左邊：索引樹 -->
+    <aside class="index-panel">
+      <section class="card">
+        <div class="section-title">
+          <span class="badge">Step 1</span> 載入 Excel（EXTERNAL_idx + ICD10_desc）
+        </div>
+        <label for="fileInput">選擇包含 <code>EXTERNAL_idx</code> 與 <code>ICD10_desc</code> 的 Excel 檔：</label>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" />
+        <div id="loadStatus" class="status"></div>
+        <div class="small-note">
+EXTERNAL_idx 欄位：Serial, Name, ParentID, Level, ICDCode, Memo<br>
+ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-title">
+          <span class="badge">Index</span> External Cause 索引（EXTERNAL_idx）
+        </div>
+        <input id="idxSearch" type="text" placeholder="搜尋 Name / Memo / ICDCode ..." disabled>
+        <div id="idxStatus" class="small-note">請先載入 Excel 檔。</div>
+        <div id="treeContainer"></div>
+      </section>
+    </aside>
+
+    <!-- 右邊：代碼與延伸碼 -->
+    <div class="content-panel">
+      <section id="detailCard" class="card">
+        <div class="section-title">
+          <span class="badge">Detail</span> 節點與代碼對應
+        </div>
+        <div id="detailArea" class="small-note">
+          左側點選任一索引節點，若該列有 ICDCode，將顯示基底代碼與對應的 ICD10_desc 延伸碼。
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script>
+  // ===== 全域資料 =====
+  let externalRows = [];   // EXTERNAL_idx
+  let icdDescRows = [];    // ICD10_desc
+  let treeMap = {};        // Serial -> node { row, children: [], subtreeTextLower: "" }
+  let treeRoots = [];      // root node list
+
+  // DOM
+  const fileInput = document.getElementById("fileInput");
+  const loadStatus = document.getElementById("loadStatus");
+  const idxSearch = document.getElementById("idxSearch");
+  const idxStatus = document.getElementById("idxStatus");
+  const treeContainer = document.getElementById("treeContainer");
+  const detailArea = document.getElementById("detailArea");
+
+  // ===== 讀取 Excel =====
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    externalRows = [];
+    icdDescRows = [];
+    treeMap = {};
+    treeRoots = [];
+    treeContainer.innerHTML = "";
+    idxSearch.value = "";
+    idxSearch.disabled = true;
+    idxStatus.textContent = "請先載入 Excel 檔。";
+    detailArea.innerHTML = "左側點選任一索引節點，若該列有 ICDCode，將顯示基底代碼與對應的 ICD10_desc 延伸碼。";
+    detailArea.className = "small-note";
+
+    if (!file) {
+      loadStatus.className = "status";
+      loadStatus.textContent = "";
+      return;
+    }
+
+    loadStatus.className = "status";
+    loadStatus.textContent = "載入中…";
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          throw new Error("Excel 中沒有任何工作表");
+        }
+
+        // 讀 EXTERNAL_idx
+        let extSheetName = "EXTERNAL_idx";
+        if (!workbook.Sheets[extSheetName]) {
+          // 若沒有就用第一張，但建議還是命名好
+          extSheetName = workbook.SheetNames[0];
+        }
+        const extSheet = workbook.Sheets[extSheetName];
+        const extJson = XLSX.utils.sheet_to_json(extSheet, { defval: "" });
+        externalRows = extJson.map((r, idx) => ({
+          Serial: String(
+            r.Serial !== undefined && r.Serial !== "" ? r.Serial :
+            (idx + 1)
+          ),
+          Name:   (r.Name   || "").toString(),
+          ParentID: (r.ParentID === "" || r.ParentID === null || r.ParentID === undefined)
+            ? null
+            : String(r.ParentID),
+          Level:   (r.Level   || "").toString(),
+          ICDCode: (r.ICDCode || "").toString().trim(),
+          Memo:    (r.Memo    || "").toString()
+        })).filter(r => r.Name !== "" || r.Memo !== "" || r.ICDCode !== "");
+
+        if (!externalRows.length) {
+          throw new Error("EXTERNAL_idx（或第一張工作表）資料列為 0");
+        }
+
+        // 讀 ICD10_desc（若存在）
+        let descSheetName = "ICD10_desc";
+        if (workbook.Sheets[descSheetName]) {
+          const descSheet = workbook.Sheets[descSheetName];
+          const descJson = XLSX.utils.sheet_to_json(descSheet, { defval: "" });
+          icdDescRows = descJson.map(r => {
+            const code = (r.code || r.Code || "").toString().trim();
+            if (!code) return null;
+            const longdes = (r.longdes || r.Longdes || r.engdesc || r.Engdesc || "").toString();
+            const rawFlag = (r.Flag || r.flag || r.FLAG || "").toString().trim().toLowerCase();
+            const flag = (rawFlag === "true" || rawFlag === "1" || rawFlag === "y" || rawFlag === "yes");
+            return { code, longdes, Flag: flag };
+          }).filter(r => r !== null);
+        } else {
+          icdDescRows = [];
+        }
+
+        buildTreeStructure();
+        renderTree("");
+        idxSearch.disabled = false;
+        idxSearch.placeholder = "搜尋多個關鍵字，例如：ACCI MOTO";
+
+        const descInfo = icdDescRows.length
+          ? ("ICD10_desc 筆數：" + icdDescRows.length)
+          : "（未找到 ICD10_desc，無法顯示延伸碼下拉）";
+        loadStatus.className = "status success";
+        loadStatus.textContent =
+          "載入成功：EXTERNAL_idx 共 " + externalRows.length +
+          " 列。\n使用工作表：" + extSheetName + "\n" + descInfo;
+
+        idxStatus.textContent = "已載入 EXTERNAL_idx，共 " + externalRows.length + " 列。";
+
+      } catch (err) {
+        console.error(err);
+        loadStatus.className = "status error";
+        loadStatus.textContent = "載入或解析 Excel 時發生錯誤：" + err.message;
+      }
+    };
+    reader.onerror = function(err) {
+      console.error(err);
+      loadStatus.className = "status error";
+      loadStatus.textContent = "無法讀取檔案。";
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  // ===== 建樹 + 預先計算 subtree 文字 =====
+  function buildTreeStructure() {
+    treeMap = {};
+    treeRoots = [];
+
+    // 建 node map
+    externalRows.forEach(row => {
+      const key = row.Serial;
+      treeMap[key] = {
+        row,
+        children: [],
+        subtreeTextLower: ""   // 之後填
+      };
+    });
+
+    // 接上 parent / children
+    Object.keys(treeMap).forEach(key => {
+      const node = treeMap[key];
+      const pid = node.row.ParentID;
+      if (pid && pid !== "0" && treeMap[pid]) {
+        treeMap[pid].children.push(node);
+      } else {
+        treeRoots.push(node);
+      }
+    });
+
+    // 依 Name 排序（穩定顯示）
+    function sortByName(nodes) {
+      nodes.sort((a, b) => {
+        const na = (a.row.Name || "").toString().trim();
+        const nb = (b.row.Name || "").toString().trim();
+        return na.localeCompare(nb, "en", { numeric: true, sensitivity: "base" });
+      });
+      nodes.forEach(n => sortByName(n.children));
+    }
+    sortByName(treeRoots);
+
+    // 預先計算每個節點的 subtreeTextLower（自己 + 所有子孫）
+    function buildSubtreeText(node) {
+      const r = node.row;
+      const parts = [
+        r.Name || "",
+        r.Memo || "",
+        r.ICDCode || ""
+      ];
+      node.children.forEach(child => {
+        buildSubtreeText(child);
+        parts.push(child.subtreeTextLower || "");
+      });
+      node.subtreeTextLower = parts.join(" ").toLowerCase();
+    }
+    treeRoots.forEach(n => buildSubtreeText(n));
+  }
+
+  // ===== 搜尋：多關鍵字 AND，祖先 + 子孫一起湊關鍵字 =====
+  // tokens: 小寫關鍵字陣列，例如 ["acci","moto"]
+  function nodeSubtreeMatches(node, tokens) {
+    if (!tokens || tokens.length === 0) return true;  // 沒輸入就全部顯示
+    const text = node.subtreeTextLower || "";
+    // 在整個 subtree 裡，同時包含所有 token
+    return tokens.every(t => text.includes(t));
+  }
+
+  function renderTree(filterText) {
+    const tokens = (filterText || "")
+      .toLowerCase()
+      .split(/[ ,]+/)
+      .filter(t => t);  // 去掉空白 token
+
+    treeContainer.innerHTML = "";
+
+    const ulRoot = document.createElement("ul");
+    ulRoot.className = "tree-root";
+
+    function appendNode(node, ul, ancestorKept) {
+      const subtreeMatch = nodeSubtreeMatches(node, tokens);
+      const keepThisBranch = ancestorKept || subtreeMatch;
+
+      if (!keepThisBranch) return;   // 整個分支都不要
+
+      const li = document.createElement("li");
+
+      const label = document.createElement("div");
+      label.className = "tree-node-label";
+      if (node.children.length) {
+        label.classList.add("has-children", "collapsed");
+      } else {
+        label.classList.add("leaf");
+      }
+
+      const r = node.row;
+      // 顯示用：把 Name 前面的 "-" + 空白 去掉
+      const rawName = r.Name || "";
+	// 把開頭所有空白 + 減號通通拔掉，例如 "   - - animal ..." → "animal ..."
+	let displayName = rawName.replace(/^[\s\-]+/, "");
+	if (!displayName) displayName = rawName || "(無名稱)";
+
+
+      const mainSpan = document.createElement("span");
+      mainSpan.className = "tree-node-text-main";
+      mainSpan.textContent = displayName;
+
+      const memoSpan = document.createElement("span");
+      memoSpan.className = "tree-node-text-sub";
+      if (r.Memo) {
+        memoSpan.textContent = " – " + r.Memo;
+        const low = r.Memo.trim().toLowerCase();
+        if (low.startsWith("see ") || low.startsWith("use ")) {
+          memoSpan.classList.add("tree-memo-see");
+        }
+      }
+
+      label.appendChild(mainSpan);
+      if (r.Memo) {
+        label.appendChild(memoSpan);
+      }
+
+      if (r.ICDCode) {
+        const codeSpan = document.createElement("span");
+        codeSpan.className = "tree-icd-code";
+        codeSpan.textContent = " " + r.ICDCode;
+        label.appendChild(codeSpan);
+      }
+
+      label.addEventListener("click", (e) => {
+        e.stopPropagation();
+
+        if (node.children.length) {
+          childrenUl.classList.toggle("collapsed");
+          label.classList.toggle("expanded");
+        }
+
+        const allLabels = treeContainer.querySelectorAll(".tree-node-label");
+        allLabels.forEach(lb => lb.classList.remove("selected"));
+        label.classList.add("selected");
+
+        showDetail(node.row);
+      });
+
+      li.appendChild(label);
+
+      const childrenUl = document.createElement("ul");
+      childrenUl.className = "tree-children collapsed";
+      node.children.forEach(child => {
+        // 一旦某個祖先被保留，下層全部保留（不再對每個子節點重新套 token）
+        appendNode(child, childrenUl, keepThisBranch);
+      });
+      if (childrenUl.children.length) {
+        li.appendChild(childrenUl);
+      }
+
+      ul.appendChild(li);
+    }
+
+    treeRoots.forEach(node => appendNode(node, ulRoot, false));
+
+    if (!ulRoot.children.length) {
+      const msg = document.createElement("div");
+      msg.className = "small-note";
+      msg.textContent = "沒有符合搜尋條件的索引節點。";
+      treeContainer.appendChild(msg);
+    } else {
+      treeContainer.appendChild(ulRoot);
+    }
+  }
+
+  idxSearch.addEventListener("input", () => {
+    renderTree(idxSearch.value);
+  });
+
+  // ===== 右側 Detail：ICDCode → ICD10_desc 延伸碼 =====
+
+  function findIcdDescOptions(baseCode) {
+    if (!icdDescRows || !icdDescRows.length) return [];
+    const prefix = (baseCode || "").trim();
+    if (!prefix) return [];
+    const simplePrefix = prefix.replace(/\s+/g, "");
+
+    // 找「前綴符合」且 Flag=TRUE，且長度比 base 長（有 encounter / sequela） 
+    return icdDescRows.filter(r => {
+      if (!r.Flag) return false;
+      const c = (r.code || "").replace(/\s+/g, "");
+      return c.indexOf(simplePrefix) === 0 && c.length > simplePrefix.length;
+    });
+  }
+
+  function copyTextToClipboard(text, msgElem) {
+    function ok() {
+      if (msgElem) {
+        msgElem.textContent = "已複製代碼：" + text;
+        msgElem.className = "status success";
+      }
+    }
+    function fail() {
+      if (msgElem) {
+        msgElem.textContent = "複製失敗，請手動選取。";
+        msgElem.className = "status error";
+      }
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok).catch(fail);
+    } else {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        const res = document.execCommand("copy");
+        document.body.removeChild(ta);
+        res ? ok() : fail();
+      } catch (e) {
+        console.error(e);
+        fail();
+      }
+    }
+  }
+
+  function showDetail(row) {
+    const baseCode = (row.ICDCode || "").trim();
+	const hasCode = !!baseCode;
+
+// 詳細資訊這邊也把開頭的 - 拿掉，跟左邊列表一致
+	const nameRaw = row.Name || "";
+	const name = nameRaw.replace(/^[\s\-]+/, "");
+	const memo = row.Memo || "";
+
+
+    if (!hasCode) {
+      detailArea.className = "small-note";
+      detailArea.innerHTML =
+        "<div class='detail-title'>索引節點</div>" +
+        "<div class='detail-block'><strong>Name：</strong>" + (name || "(無名稱)") + "</div>" +
+        (memo ? "<div class='detail-block'><strong>Memo：</strong>" + memo + "</div>" : "") +
+        "<div class='small-note'>此節點沒有 ICDCode，可當作說明或 see/use 參考。</div>";
+      return;
+    }
+
+    const options = findIcdDescOptions(baseCode);
+
+    detailArea.className = "";
+    let html = "";
+    html += "<div class='detail-title'>External Cause 代碼選擇</div>";
+    html += "<div class='detail-block'><strong>Name：</strong>" + (name || "(無名稱)") + "</div>";
+    if (memo) {
+      html += "<div class='detail-block'><strong>Memo：</strong>" + memo + "</div>";
+    }
+    html += "<div class='detail-block'><strong>基底外因代碼：</strong><code>" + baseCode + "</code></div>";
+
+    html += "<div class='detail-block'><strong>ICD10_desc 延伸碼（Flag=TRUE）：</strong><br>";
+
+    html += "<select id='icdSelect' class='icd-select'>";
+
+    if (options.length > 0) {
+      options.forEach(o => {
+        const firstLine = (o.longdes || "").split(/\r?\n/)[0];
+        html += "<option value='" + o.code.replace(/'/g, "&apos;") + "'>";
+        html += o.code + " — " + firstLine;
+        html += "</option>";
+      });
+    } else {
+      html += "<option value='" + baseCode.replace(/'/g, "&apos;") + "'>";
+      html += "找不到 Flag=TRUE 延伸碼，使用原始代碼 " + baseCode;
+      html += "</option>";
+    }
+
+    html += "</select>";
+    html += "<button id='copyBtn' type='button' class='copy-btn'>複製代碼</button>";
+    html += "<div id='copyMsg' class='status' style='margin-top:4px;'></div>";
+    html += "</div>"; // detail-block
+
+    // 顯示 longdes（若有）
+    let firstLong = "";
+    if (options.length > 0) {
+      firstLong = options[0].longdes || "";
+    } else {
+      const matchBase = icdDescRows.find(r => (r.code || "").trim() === baseCode);
+      firstLong = matchBase ? (matchBase.longdes || "") : "";
+    }
+    if (firstLong) {
+      html += "<div class='detail-block'><strong>說明（目前下拉所選）：</strong></div>";
+      html += "<div id='longdesBox' class='longdes-box'>" + escapeHtml(firstLong) + "</div>";
+    } else {
+      html += "<div class='small-note'>ICD10_desc 中找不到對應說明（longdes）。</div>";
+    }
+
+    detailArea.innerHTML = html;
+
+    const icdSelect = document.getElementById("icdSelect");
+    const copyBtn = document.getElementById("copyBtn");
+    const copyMsg = document.getElementById("copyMsg");
+    const longdesBox = document.getElementById("longdesBox");
+
+    if (icdSelect && longdesBox) {
+      icdSelect.addEventListener("change", () => {
+        const code = icdSelect.value || "";
+        const rec = icdDescRows.find(r => (r.code || "").trim() === code);
+        if (rec && rec.longdes) {
+          longdesBox.textContent = rec.longdes;
+        } else if (code === baseCode && !options.length) {
+          const baseRec = icdDescRows.find(r => (r.code || "").trim() === baseCode);
+          longdesBox.textContent = baseRec ? (baseRec.longdes || "") : "";
+        } else {
+          longdesBox.textContent = "";
+        }
+      });
+    }
+
+    if (copyBtn && icdSelect && copyMsg) {
+      copyBtn.addEventListener("click", () => {
+        const code = icdSelect.value || baseCode;
+        copyTextToClipboard(code, copyMsg);
+      });
+    }
+  }
+
+  // 簡易 HTML escape（用於 longdes）
+  function escapeHtml(str) {
+    return String(str || "")
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;");
+  }
+</script>
+</body>
+</html>

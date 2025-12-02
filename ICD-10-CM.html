@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>ICD 樹狀查詢 + ICD10_desc 說明</title>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<style>
+    body {
+        font-family: "Segoe UI", system-ui, sans-serif;
+        margin: 0;
+        padding: 0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background-color: #FFF8DC; /* 米黃色 */
+    }
+    header {
+        padding: 8px 12px;
+        background: #f0f0f0;
+        border-bottom: 1px solid #ccc;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    header input[type="text"] {
+        flex: 1;
+        min-width: 160px;
+        padding: 4px 6px;
+    }
+    header button {
+        padding: 4px 10px;
+        cursor: pointer;
+    }
+    main {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+    }
+    #treeContainer {
+        flex: 1;
+        border-right: 1px solid #ddd;
+        padding: 8px;
+        overflow: auto;
+        font-size: 14px;
+        background-color: #FFF8DC;
+    }
+    /* 右邊 panel 放大 + 字體加大 */
+    #detailPanel {
+        width: 520px;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        background: #faf3df;
+        border-left: 1px solid #e0d0aa;
+        box-sizing: border-box;
+        font-size: 14px;
+    }
+    #detailPanel label {
+        font-weight: 600;
+        margin-top: 2px;
+    }
+    #detailPanel input,
+    #detailPanel select,
+    #detailPanel textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 8px;
+        font-family: inherit;
+        font-size: 14px;
+    }
+    #mainDesc {
+        height: 180px;
+        resize: vertical;
+    }
+    #includesBox,
+    #ex1Box,
+    #ex2Box {
+        height: 90px;
+        resize: vertical;
+    }
+
+    /* Tree style */
+    .tree-node {
+        margin-left: 0;
+    }
+    .tree-row {
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+        cursor: default;
+    }
+    .tree-toggle {
+        width: 14px;
+        text-align: center;
+        cursor: pointer;
+        user-select: none;
+        font-size: 11px;
+        color: #666;
+    }
+    .tree-toggle.empty {
+        cursor: default;
+    }
+    .tree-label {
+        padding: 2px 3px;
+        border-radius: 3px;
+    }
+    .tree-label.code {
+        color: #b00020; /* 有代碼的項目用深紅字 */
+    }
+    .tree-label.selected {
+        background: #0078d4;
+        color: #fff;
+    }
+    .children {
+        margin-left: 16px;
+    }
+    .children.collapsed {
+        display: none;
+    }
+
+    /* 完整代碼 + 複製按鈕排版 */
+    .fullcode-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+    .fullcode-row select {
+        flex: 1;
+    }
+    #copyFullCodeBtn {
+        padding: 4px 10px;
+        font-size: 13px;
+        border-radius: 4px;
+        border: 1px solid #2d6cdf;
+        background-color: #2d6cdf;
+        color: #fff;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    #copyFullCodeBtn:hover {
+        background-color: #1c4fb3;
+    }
+</style>
+</head>
+<body>
+
+<header>
+    <label>Excel 檔：
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+    </label>
+    <input type="text" id="searchBox" placeholder="多關鍵字用空白分開（名稱或代碼，模糊比對，路徑 AND）">
+    <button id="btnSearch">搜尋</button>
+    <span id="status" style="font-size:12px;color:#666;"></span>
+</header>
+
+<main>
+    <div id="treeContainer">請先選擇 Excel 檔案（ICD10_idx + ICD10_desc）</div>
+
+    <div id="detailPanel">
+        <label for="codeBox">代碼：</label>
+        <input type="text" id="codeBox" readonly>
+
+        <label for="fullCodeSelect">完整代碼：</label>
+        <div class="fullcode-row">
+            <select id="fullCodeSelect"></select>
+            <button id="copyFullCodeBtn" type="button">複製</button>
+        </div>
+
+        <label for="mainDesc">說明 / 其他註記 (engdesc + other1~other20)：</label>
+        <textarea id="mainDesc" readonly></textarea>
+
+        <label for="includesBox">Includes：</label>
+        <textarea id="includesBox" readonly></textarea>
+
+        <label for="ex1Box">Excludes1：</label>
+        <textarea id="ex1Box" readonly></textarea>
+
+        <label for="ex2Box">Excludes2：</label>
+        <textarea id="ex2Box" readonly></textarea>
+    </div>
+</main>
+
+<script>
+/* ===== 全域資料 ===== */
+let icdRows = [];    // ICD10_idx
+let descRows = [];   // ICD10_desc
+let nodeMap = {};
+let rootNodes = [];
+let lastSelectedLabel = null;
+
+/* ===== 讀取 Excel ===== */
+// ==== 嘗試從首頁共享的 Excel 資料初始化（被 index.html 用 iframe 開啟時） ====
+function tryInitFromParentShared() {
+    try {
+        // 如果沒有 parent，或 parent 就是自己，表示不是從 index.html 進來
+        if (!window.parent || window.parent === window) return false;
+
+        const shared = window.parent.ICD_SHARED_DATA;
+        if (!shared || !shared.sheets) return false;
+
+        const icdIdx  = shared.sheets.icdIdx  || [];
+        const icdDesc = shared.sheets.icdDesc || [];
+
+        // 如果首頁還沒載入成功，就不要動
+        if (!icdIdx.length) return false;
+
+        // 把資料接過來，當成原本自己讀到的 Excel
+        icdRows  = icdIdx;
+        descRows = icdDesc;
+
+        buildTreeData();   // 你原本就有的函式
+        renderTree();      // 你原本就有的函式
+
+        const st = document.getElementById('status');
+        if (st) {
+            st.textContent =
+                "使用首頁共用資料：ICD10_idx " + icdRows.length +
+                " 筆 / ICD10_desc " + descRows.length + " 筆。";
+        }
+
+        // 如果你希望這頁不要再讓人上傳檔案，可以把 input 關掉
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput) {
+            fileInput.disabled = true;
+            fileInput.style.opacity = 0.5;
+            fileInput.title = "已由首頁載入 Excel，共用同一份資料";
+        }
+
+        return true;
+    } catch (e) {
+        console.error("tryInitFromParentShared error:", e);
+        return false;
+    }
+}
+
+// 頁面載入後，先試著從 parent 拿資料
+window.addEventListener("load", function () {
+    tryInitFromParentShared();
+});
+
+// 如果首頁重新載入 Excel，會用 postMessage 通知，這邊再同步一次
+window.addEventListener("message", function (e) {
+    if (!e.data || e.data.type !== "ICD_EXCEL_LOADED") return;
+    tryInitFromParentShared();
+});
+
+document.getElementById('fileInput').addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (evt) {
+        const data = evt.target.result;
+        const wb = XLSX.read(data, { type: 'binary' });
+
+        const sheetNames = wb.SheetNames;
+        if (!sheetNames.length) {
+            alert("這個 Excel 沒有任何工作表。");
+            return;
+        }
+
+        // 找 idx / desc 工作表
+        let idxSheetName = null;
+        let descSheetName = null;
+        sheetNames.forEach(n => {
+            const lower = n.toLowerCase();
+            if (!idxSheetName && (lower === "icd10_idx" || lower.indexOf("idx") >= 0)) {
+                idxSheetName = n;
+            }
+            if (!descSheetName && (lower === "icd10_desc" || lower.indexOf("desc") >= 0)) {
+                descSheetName = n;
+            }
+        });
+        if (!idxSheetName) idxSheetName = sheetNames[0];
+        if (!descSheetName && sheetNames.length > 1) descSheetName = sheetNames[1];
+
+        const idxSheet = wb.Sheets[idxSheetName];
+        icdRows = XLSX.utils.sheet_to_json(idxSheet, { defval: "" });
+
+        if (descSheetName) {
+            const descSheet = wb.Sheets[descSheetName];
+            descRows = XLSX.utils.sheet_to_json(descSheet, { defval: "" });
+        } else {
+            descRows = [];
+        }
+
+        buildTreeData();
+        renderTree();
+        document.getElementById('status').textContent =
+            `載入索引 ${icdRows.length} 筆 (${idxSheetName})，ICD10_desc 筆數：${descRows.length}` +
+            (descSheetName ? `（工作表：${descSheetName}）` : "（未找到 ICD10_desc 工作表）");
+    };
+    reader.readAsBinaryString(file);
+});
+
+/* ===== 建立樹狀資料 ===== */
+function buildTreeData() {
+    nodeMap = {};
+    rootNodes = [];
+
+    icdRows.forEach(row => {
+        const serial = Number(row.Serial);
+        if (!serial) return;
+        const node = {
+            serial: serial,
+            name: String(row.Name || ""),
+            parentId: Number(row.ParentID || 0),
+            level: Number(row.Level || 0),
+            icd: String(row.ICDCode || ""),
+            children: []
+        };
+        nodeMap[serial] = node;
+    });
+
+    Object.values(nodeMap).forEach(node => {
+        if (!node.parentId || !nodeMap[node.parentId]) {
+            rootNodes.push(node);
+        } else {
+            nodeMap[node.parentId].children.push(node);
+        }
+    });
+}
+
+/* ===== 模糊比對 & 路徑過濾 ===== */
+function fuzzyMatch(text, pattern) {
+    const t = (text || "").toLowerCase();
+    const p = (pattern || "").toLowerCase();
+    if (!p) return true;
+    return t.indexOf(p) !== -1;   // 模糊包含
+}
+
+function matchedKeywordsAtNode(node, kwArray) {
+    const matched = new Set();
+    if (!kwArray || kwArray.length === 0) return matched;
+    const textName = node.name;
+    const textICD = node.icd;
+    kwArray.forEach(kw => {
+        if (fuzzyMatch(textName, kw) || fuzzyMatch(textICD, kw)) {
+            matched.add(kw);
+        }
+    });
+    return matched;
+}
+
+function filterNodeByKeywordsPath(node, kwArray, matchedSoFar) {
+    if (!kwArray || kwArray.length === 0) {
+        return {
+            serial: node.serial,
+            name: node.name,
+            parentId: node.parentId,
+            level: node.level,
+            icd: node.icd,
+            children: (node.children || []).map(c =>
+                filterNodeByKeywordsPath(c, kwArray, new Set())
+            )
+        };
+    }
+
+    const newlyMatched = matchedKeywordsAtNode(node, kwArray);
+    const newMatchedSet = new Set(matchedSoFar);
+    newlyMatched.forEach(k => newMatchedSet.add(k));
+
+    let newChildren = [];
+    (node.children || []).forEach(child => {
+        const childFiltered = filterNodeByKeywordsPath(child, kwArray, newMatchedSet);
+        if (childFiltered) newChildren.push(childFiltered);
+    });
+
+    const allMatched = kwArray.every(k => newMatchedSet.has(k));
+
+    if (allMatched || newChildren.length > 0) {
+        return {
+            serial: node.serial,
+            name: node.name,
+            parentId: node.parentId,
+            level: node.level,
+            icd: node.icd,
+            children: newChildren
+        };
+    }
+    return null;
+}
+
+/* ===== 渲染樹狀 ===== */
+function renderTree(filterText = "") {
+    const container = document.getElementById('treeContainer');
+    container.innerHTML = "";
+
+    if (!rootNodes.length) {
+        container.textContent = "沒有資料，請先載入 Excel。";
+        return;
+    }
+
+    let kwArray = [];
+    if (filterText.trim() !== "") {
+        const normalized = filterText.replace(/\u3000/g, " ");
+        kwArray = normalized.split(" ")
+            .map(s => s.trim().toLowerCase())
+            .filter(s => s.length > 0);
+    }
+
+    let shown = 0;
+    rootNodes.sort((a, b) => a.serial - b.serial);
+    rootNodes.forEach(root => {
+        const filtered = filterNodeByKeywordsPath(root, kwArray, new Set());
+        if (filtered) {
+            container.appendChild(renderNode(filtered));
+            shown++;
+        }
+    });
+
+    if (kwArray.length > 0 && shown === 0) {
+        container.textContent = "找不到符合所有關鍵字的路徑。";
+    }
+}
+
+function renderNode(node) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tree-node';
+
+    const row = document.createElement('div');
+    row.className = 'tree-row';
+
+    const toggle = document.createElement('span');
+    toggle.className = 'tree-toggle';
+    if (node.children && node.children.length) {
+        toggle.textContent = "+";
+    } else {
+        toggle.textContent = "";
+        toggle.classList.add('empty');
+    }
+    row.appendChild(toggle);
+
+    const label = document.createElement('span');
+    label.className = 'tree-label';
+    if (node.icd) label.classList.add('code');
+
+    let cleanName = node.name.replace(/^[-\s]+/, "");
+    label.textContent = cleanName;
+
+    label.addEventListener('click', () => {
+        showDetail(node);
+        selectLabel(label);
+    });
+
+    row.appendChild(label);
+    wrapper.appendChild(row);
+
+    const childrenDiv = document.createElement('div');
+    childrenDiv.className = 'children collapsed';
+    if (node.children && node.children.length) {
+        node.children.sort((a, b) => a.serial - b.serial);
+        node.children.forEach(child => {
+            childrenDiv.appendChild(renderNode(child));
+        });
+    }
+    wrapper.appendChild(childrenDiv);
+
+    if (!toggle.classList.contains('empty')) {
+        toggle.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            const collapsed = childrenDiv.classList.toggle('collapsed');
+            toggle.textContent = collapsed ? "+" : "−";
+        });
+    }
+
+    return wrapper;
+}
+
+/* ===== ICD10_desc 工具 ===== */
+function getDescMeta(row) {
+    const meta = {};
+
+    meta.code = String(row.code || row.Code || "").trim();
+    meta.flag = (row.Flag !== undefined ? row.Flag : row.flag);
+
+    meta.engdesc = String(
+        row.engdesc || row.ENGDESC || row.EngDesc || ""
+    ).trim();
+
+    meta.includes = String(row.Includes || "").trim();
+    meta.ex1      = String(row.Excludes1 || "").trim();
+    meta.ex2      = String(row.Excludes2 || "").trim();
+
+    meta.others = [];
+    for (let i = 1; i <= 20; i++) {
+        const key = "other" + i;
+        const v = row[key];
+        meta.others.push(v != null ? String(v).trim() : "");
+    }
+
+    return meta;
+}
+
+function isFlagTrue(flagVal) {
+    const s = String(flagVal).toLowerCase().trim();
+    return (s === "true" || s === "1" || s === "-1" || s === "y" || s === "yes");
+}
+
+function findDescRowByCode(code) {
+    if (!code || !descRows.length) return null;
+    for (const r of descRows) {
+        const m = getDescMeta(r);
+        if (m.code === code) return { row: r, meta: m };
+    }
+    return null;
+}
+
+/* 建立完整代碼下拉：若 flag=false，抓所有以該 code 為前綴且 flag=true 的代碼 */
+function buildFullCodeOptions(baseCode, currentCode) {
+    const sel = document.getElementById('fullCodeSelect');
+    sel.innerHTML = "";
+    if (!baseCode) return;
+
+    const baseFound = findDescRowByCode(baseCode);
+    const codes = [];
+
+    if (baseFound && !isFlagTrue(baseFound.meta.flag)) {
+        const prefix = baseFound.meta.code;
+        descRows.forEach(r => {
+            const m = getDescMeta(r);
+            if (!m.code) return;
+            if (m.code.length > prefix.length &&
+                m.code.startsWith(prefix) &&
+                isFlagTrue(m.flag)) {
+                codes.push(m.code);
+            }
+        });
+        if (!codes.length) {
+            codes.push(baseCode);
+        }
+    } else {
+        codes.push(baseCode);
+    }
+
+    codes.sort((a, b) => a.localeCompare(b));
+    codes.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        if (currentCode && c === currentCode) opt.selected = true;
+        sel.appendChild(opt);
+    });
+
+    if (!sel.value && sel.options.length > 0) {
+        sel.selectedIndex = 0;
+    }
+}
+
+/* 更新說明框：engdesc + other1~20 + 類目碼對應的內容 */
+function updateDescForCode(code) {
+    const mainDesc = document.getElementById('mainDesc');
+    const incBox   = document.getElementById('includesBox');
+    const ex1Box   = document.getElementById('ex1Box');
+    const ex2Box   = document.getElementById('ex2Box');
+
+    mainDesc.value = "";
+    incBox.value   = "";
+    ex1Box.value   = "";
+    ex2Box.value   = "";
+
+    if (!code) return;
+
+    const found = findDescRowByCode(code);
+    if (!found) return;
+    const m = found.meta;
+
+    let catMeta = null;
+    let catCode = "";
+    if (code.length >= 3) {
+        catCode = code.substring(0, 3);
+        const foundCat = findDescRowByCode(catCode);
+        if (foundCat) catMeta = foundCat.meta;
+    }
+
+    const lines = [];
+    if (m.engdesc) lines.push(m.engdesc);
+    m.others.forEach(o => {
+        if (o) lines.push(o);
+    });
+
+    if (catMeta) {
+        if (catMeta.engdesc) {
+            lines.push(catCode + " " + catMeta.engdesc);
+        }
+        catMeta.others.forEach(o => {
+            if (o) lines.push(catCode + " " + o);
+        });
+    }
+
+    const cleanedLines = lines.filter(line => line && line.trim() !== "");
+    mainDesc.value = cleanedLines.join("\n");
+
+    function splitLines(text) {
+        if (!text) return [];
+        return String(text).split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
+    }
+
+    const includeLines = [];
+    if (catMeta && catMeta.includes) {
+        splitLines(catMeta.includes).forEach(line => {
+            includeLines.push(catCode + " " + line);
+        });
+    }
+    if (m.includes) {
+        splitLines(m.includes).forEach(line => {
+            includeLines.push(line);
+        });
+    }
+    incBox.value = includeLines.join("\n");
+
+    const ex1Lines = [];
+    if (catMeta && catMeta.ex1) {
+        splitLines(catMeta.ex1).forEach(line => {
+            ex1Lines.push(catCode + " " + line);
+        });
+    }
+    if (m.ex1) {
+        splitLines(m.ex1).forEach(line => {
+            ex1Lines.push(line);
+        });
+    }
+    ex1Box.value = ex1Lines.join("\n");
+
+    const ex2Lines = [];
+    if (catMeta && catMeta.ex2) {
+        splitLines(catMeta.ex2).forEach(line => {
+            ex2Lines.push(catCode + " " + line);
+        });
+    }
+    if (m.ex2) {
+        splitLines(m.ex2).forEach(line => {
+            ex2Lines.push(line);
+        });
+    }
+    ex2Box.value = ex2Lines.join("\n");
+}
+
+/* ===== 點樹狀節點 → 更新右側 ===== */
+function showDetail(node) {
+    const codeBox = document.getElementById('codeBox');
+    const sel = document.getElementById('fullCodeSelect');
+
+    const icd = node.icd || "";
+    codeBox.value = icd;
+    sel.innerHTML = "";
+    document.getElementById('mainDesc').value = "";
+    document.getElementById('includesBox').value = "";
+    document.getElementById('ex1Box').value = "";
+    document.getElementById('ex2Box').value = "";
+
+    if (!icd) return;
+
+    buildFullCodeOptions(icd, icd);
+    updateDescForCode(sel.value);
+}
+
+/* 下拉改變 → 換說明 */
+document.getElementById('fullCodeSelect').addEventListener('change', function () {
+    const code = this.value;
+    updateDescForCode(code);
+});
+
+/* 選取左側 label 高亮 */
+function selectLabel(label) {
+    if (lastSelectedLabel) {
+        lastSelectedLabel.classList.remove('selected');
+    }
+    label.classList.add('selected');
+    lastSelectedLabel = label;
+}
+
+/* ===== 複製完整代碼按鈕 ===== */
+function copyTextToClipboard(text, statusElem) {
+    if (!text) {
+        if (statusElem) {
+            statusElem.textContent = "沒有可複製的代碼。";
+            statusElem.style.color = "#b91c1c";
+        }
+        return;
+    }
+
+    function onSuccess() {
+        if (statusElem) {
+            statusElem.textContent = "已複製：" + text;
+            statusElem.style.color = "#065f46";
+        }
+    }
+    function onFail() {
+        if (statusElem) {
+            statusElem.textContent = "複製失敗，請手動選取。";
+            statusElem.style.color = "#b91c1c";
+        }
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(onSuccess).catch(onFail);
+    } else {
+        try {
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            const ok = document.execCommand("copy");
+            document.body.removeChild(textarea);
+            ok ? onSuccess() : onFail();
+        } catch (e) {
+            console.error(e);
+            onFail();
+        }
+    }
+}
+
+document.getElementById("copyFullCodeBtn").addEventListener("click", function () {
+    const sel = document.getElementById("fullCodeSelect");
+    const statusElem = document.getElementById("status");
+    const code = sel.value || "";
+    copyTextToClipboard(code, statusElem);
+});
+
+/* ===== 搜尋相關 ===== */
+function doSearch() {
+    if (!icdRows.length) return;
+    const kwText = document.getElementById('searchBox').value.trim();
+    renderTree(kwText);
+    const status = document.getElementById('status');
+    if (!kwText) {
+        status.textContent = "顯示全部群組（全部收合）";
+        status.style.color = "#666";
+    } else {
+        status.textContent =
+            "只顯示同一路徑上累積符合所有模糊關鍵字的分支（其餘隱藏）";
+        status.style.color = "#666";
+    }
+}
+
+/* 按鈕點擊 */
+document.getElementById('btnSearch').addEventListener('click', doSearch);
+
+/* 按 Enter */
+document.getElementById('searchBox').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+        doSearch();
+        e.preventDefault();
+    }
+});
+
+/* 動態輸入即時搜尋 */
+document.getElementById('searchBox').addEventListener('input', function () {
+    doSearch();
+});
+</script>
+
+</body>
+</html>

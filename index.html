@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>ICD-10 查詢工具整合</title>
+
+  <!-- 讀 Excel 用 -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 8px 16px;
+      background: #1f2933;
+      color: #fff;
+      font-size: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      box-sizing: border-box;
+    }
+    header .title {
+      font-weight: 600;
+      font-size: 16px;
+    }
+    header .desc {
+      font-size: 12px;
+      opacity: 0.8;
+    }
+    header .right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    main {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+    nav {
+      width: 230px;
+      border-right: 1px solid #ddd;
+      background: #f9fafb;
+      padding: 12px 8px;
+      box-sizing: border-box;
+    }
+    .nav-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    .nav-btn {
+      width: 100%;
+      text-align: left;
+      padding: 6px 10px;
+      margin-bottom: 4px;
+      font-size: 13px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      cursor: pointer;
+    }
+    .nav-btn:hover {
+      background: #e5f0ff;
+    }
+    .nav-btn.active {
+      background: #2563eb;
+      color: #fff;
+      border-color: #1d4ed8;
+    }
+    #toolFrame {
+      flex: 1;
+      border: none;
+      width: 100%;
+      height: 100%;
+    }
+    #statusBar {
+      font-size: 12px;
+      color: #6b7280;
+      padding: 4px 16px 6px;
+      border-top: 1px solid #e5e7eb;
+      background: #f9fafb;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      box-sizing: border-box;
+    }
+    #statusBar span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 50%;
+    }
+    #excelStatus {
+      color: #b91c1c; /* 預設紅色：尚未載入或失敗 */
+    }
+    #pageStatus {
+      color: #374151;
+    }
+    #masterExcel {
+      font-size: 11px;
+    }
+  </style>
+
+  <script>
+    // ===== 全域共用資料，五個工具頁都從這裡拿 =====
+    window.ICD_SHARED_DATA = {
+      workbook: null,
+      fileName: "",
+      sheets: {
+        icdIdx:      [], // ICD10_idx
+        icdDesc:     [], // ICD10_desc
+        drugIdx:     [], // Drug_idx
+        externalIdx: [], // EXTERNAL_idx
+        neoplasms:   [], // NEOPLASMS
+        pcsTable:    [], // PCS_Table
+        pcsIdx:      []  // PCS_idx
+      }
+    };
+
+    function setExcelStatus(msg, isError) {
+      const el = document.getElementById("excelStatus");
+      el.textContent = msg || "";
+      if (isError === undefined) return;
+      el.style.color = isError ? "#b91c1c" : "#059669";
+    }
+
+    function setPageStatus(msg) {
+      const el = document.getElementById("pageStatus");
+      el.textContent = msg || "";
+    }
+
+    // 解析 workbook，填進 ICD_SHARED_DATA
+    function parseWorkbook(arrayBuffer, fileName) {
+      const wb = XLSX.read(arrayBuffer, { type: "array" });
+      window.ICD_SHARED_DATA.workbook = wb;
+      window.ICD_SHARED_DATA.fileName = fileName || "";
+
+      function sheetJson(possibleNames, fallbackIndex) {
+        let sheet = null;
+        let sheetName = "";
+        for (const name of possibleNames) {
+          if (wb.Sheets[name]) {
+            sheet = wb.Sheets[name];
+            sheetName = name;
+            break;
+          }
+        }
+        if (!sheet && typeof fallbackIndex === "number" &&
+            wb.SheetNames[fallbackIndex]) {
+          sheetName = wb.SheetNames[fallbackIndex];
+          sheet = wb.Sheets[sheetName];
+        }
+        if (!sheet) return { json: [], name: "" };
+        return {
+          json: XLSX.utils.sheet_to_json(sheet, { defval: "" }),
+          name: sheetName
+        };
+      }
+
+      const icdIdx  = sheetJson(["ICD10_idx", "ICD-10_idx", "icd10_idx"], 0);
+      const icdDesc = sheetJson(["ICD10_desc","ICD-10_desc","icd10_desc"], 1);
+      const drugIdx = sheetJson(["Drug_idx","DRUG_idx","drug_idx"], -1);
+      const extIdx  = sheetJson(["EXTERNAL_idx","External_idx","external_idx"], -1);
+      const neo     = sheetJson(["NEOPLASMS","Neoplasms","neoplasms"], -1);
+      const pcsT    = sheetJson(["PCS_Table","PCS_Tabl","pcs_table"], -1);
+      const pcsI    = sheetJson(["PCS_idx","PCS_Idx","pcs_idx"], -1);
+
+      window.ICD_SHARED_DATA.sheets.icdIdx      = icdIdx.json;
+      window.ICD_SHARED_DATA.sheets.icdDesc     = icdDesc.json;
+      window.ICD_SHARED_DATA.sheets.drugIdx     = drugIdx.json;
+      window.ICD_SHARED_DATA.sheets.externalIdx = extIdx.json;
+      window.ICD_SHARED_DATA.sheets.neoplasms   = neo.json;
+      window.ICD_SHARED_DATA.sheets.pcsTable    = pcsT.json;
+      window.ICD_SHARED_DATA.sheets.pcsIdx      = pcsI.json;
+
+      const msg =
+        "Excel 載入成功：" + (fileName || "(未命名)") +
+        " ｜ ICD_idx:"      + icdIdx.json.length +
+        " / desc:"          + icdDesc.json.length +
+        " / Drug:"          + drugIdx.json.length +
+        " / External:"      + extIdx.json.length +
+        " / Neo:"           + neo.json.length +
+        " / PCS_Table:"     + pcsT.json.length +
+        " / PCS_idx:"       + pcsI.json.length;
+
+      setExcelStatus(msg, false);
+
+      // 通知目前 iframe：資料已更新（子頁如果有需要可以監聽）
+      const frame = document.getElementById("toolFrame");
+      if (frame && frame.contentWindow) {
+        frame.contentWindow.postMessage({ type: "ICD_EXCEL_LOADED" }, "*");
+      }
+    }
+
+    // 嘗試自動載入同資料夾的 icd-10.xlsx（需要透過 http 伺服器開啟）
+    async function tryAutoLoadExcel() {
+      try {
+        const resp = await fetch("icd-10.xlsx");
+        if (!resp.ok) throw new Error("HTTP 狀態 " + resp.status);
+        const buf = await resp.arrayBuffer();
+        parseWorkbook(buf, "icd-10.xlsx");
+
+        const uploadDiv = document.getElementById("uploadArea");
+        if (uploadDiv) uploadDiv.style.display = "none";
+      } catch (e) {
+        console.warn("自動載入 icd-10.xlsx 失敗：", e);
+        setExcelStatus("自動載入 icd-10.xlsx 失敗，請手動選擇 Excel 檔。", true);
+        const uploadDiv = document.getElementById("uploadArea");
+        if (uploadDiv) uploadDiv.style.display = "inline-flex";
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const fileInput = document.getElementById("masterExcel");
+      const uploadArea = document.getElementById("uploadArea");
+
+      // 手動匯入
+      fileInput.addEventListener("change", (e) => {
+        const f = e.target.files[0];
+        if (!f) {
+          setExcelStatus("尚未選擇 Excel 檔案", true);
+          return;
+        }
+        setExcelStatus("讀取中：" + f.name + " …", false);
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          try {
+            parseWorkbook(evt.target.result, f.name);
+          } catch (err) {
+            console.error(err);
+            setExcelStatus("解析 Excel 失敗：" + err.message, true);
+          }
+        };
+        reader.onerror = function(err) {
+          console.error(err);
+          setExcelStatus("讀取檔案失敗", true);
+        };
+        reader.readAsArrayBuffer(f);
+      });
+
+      // 左邊按鈕切換工具頁
+      const btns = document.querySelectorAll(".nav-btn");
+      const frame = document.getElementById("toolFrame");
+
+      function loadPage(page, btn) {
+        frame.src = page;
+        btns.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        setPageStatus("目前開啟：" + btn.textContent.trim());
+      }
+
+      btns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          const page = btn.getAttribute("data-page");
+          loadPage(page, btn);
+        });
+      });
+
+      // 預設先開 ICD-10-CM
+      const defaultBtn =
+        document.querySelector('.nav-btn[data-page="ICD-10-CM.html"]') || btns[0];
+      if (defaultBtn) {
+        loadPage(defaultBtn.getAttribute("data-page"), defaultBtn);
+      }
+
+      // 初始狀態
+      setExcelStatus("嘗試自動載入同資料夾的 icd-10.xlsx …", false);
+      setPageStatus("請先確認上方 Excel 已載入，再從左側選工具。");
+
+      // 嘗試自動載入
+      tryAutoLoadExcel();
+    });
+  </script>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="title">ICD-10 查詢工具整合</div>
+      <div class="desc">Drug / External / ICD-10-CM / Neoplasms / PCS — Excel 匯入一次共用</div>
+    </div>
+
+    <div class="right">
+      <div id="uploadArea" style="display:none;">
+        <span>或手動匯入 Excel：</span>
+        <input type="file" id="masterExcel" accept=".xlsx,.xls">
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <nav>
+      <div class="nav-title">功能選單</div>
+      <button class="nav-btn" data-page="ICD-10-CM.html">ICD-10-CM 主索引</button>
+      <button class="nav-btn" data-page="drug.html">Drug Table</button>
+      <button class="nav-btn" data-page="external.html">External Causes</button>
+      <button class="nav-btn" data-page="neoplasms.html">Neoplasms 索引</button>
+      <button class="nav-btn" data-page="pcs.html">PCS 組碼</button>
+    </nav>
+
+    <iframe id="toolFrame" src=""></iframe>
+  </main>
+
+  <div id="statusBar">
+    <span id="excelStatus"></span>
+    <span id="pageStatus"></span>
+  </div>
+</body>
+</html>

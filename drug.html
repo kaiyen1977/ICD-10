@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8" />
+    <title>Drug_idx 樹狀索引 + 六欄 Intent 顯示（從 Excel 讀取）</title>
+
+    <!-- 讀取 Excel 用的 xlsx 套件（要有網路才能載到） -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+        body {
+            font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            padding: 8px 16px;
+            background-color: #2d6cdf;
+            color: white;
+            font-size: 16px;
+        }
+
+        #main {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+        }
+
+        #tree-panel {
+            width: 40%;
+            border-right: 1px solid #ddd;
+            padding: 8px 12px;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        #detail-panel {
+            flex: 1;
+            padding: 8px 12px;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        .tree-root {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .tree-root ul {
+            list-style: none;
+            padding-left: 18px;
+            margin: 0;
+        }
+
+        .tree-node {
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            user-select: none;
+        }
+
+        .tree-node:hover {
+            background-color: #f0f4ff;
+        }
+
+        .tree-node.selected {
+            background-color: #e0ebff;
+            font-weight: 600;
+        }
+
+        #drug-detail h3 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            font-size: 15px;
+            color: #333;
+        }
+
+        .drug-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .drug-table th,
+        .drug-table td {
+            border: 1px solid #ccc;
+            padding: 4px 6px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .drug-table th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .substance-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .hint {
+            color: #666;
+            font-size: 13px;
+        }
+
+        #file-info {
+            font-size: 12px;
+            color: #555;
+            margin-top: 4px;
+            white-space: pre-line;
+        }
+
+        #error-msg {
+            color: #c00;
+            font-size: 12px;
+            margin-top: 4px;
+            white-space: pre-line;
+        }
+
+        /* 搜尋框 */
+        #tree-search {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 4px 6px;
+            margin: 4px 0 6px;
+            font-size: 13px;
+        }
+
+        /* 右側代碼選擇與複製按鈕 */
+        .code-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .selected-codes-area {
+            margin-top: 8px;
+            border-top: 1px solid #ddd;
+            padding-top: 6px;
+            font-size: 13px;
+        }
+
+        .selected-codes-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .selected-code-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+
+        .selected-base {
+            min-width: 120px;
+        }
+
+        .selected-base strong {
+            font-family: "Consolas","Menlo",monospace;
+        }
+
+        .selected-dropdown {
+            min-width: 260px;
+        }
+
+        .copy-final-btn {
+            padding: 2px 8px;
+            font-size: 12px;
+            border-radius: 4px;
+            border: 1px solid #2d6cdf;
+            background-color: #2d6cdf;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .copy-final-btn:hover {
+            background-color: #1c4fb3;
+        }
+
+        .selected-msg {
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+<header>
+    Drug_idx 樹狀索引 Demo（從 Excel 讀取）  
+    — 點選左側 Substance，下方顯示：Unintentional / Self-harm / Assault / Undetermined / Side effect / Underdosing
+</header>
+
+<div id="main">
+    <div id="tree-panel">
+        <h3 style="margin-top: 0;">1. 請先選擇 Drug_idx 的 Excel 檔</h3>
+
+        <input type="file" id="file-input" accept=".xlsx,.xls" />
+        <div id="file-info"></div>
+        <div id="error-msg"></div>
+
+        <hr />
+
+        <h3>2. Drug_idx 樹狀索引</h3>
+        <input type="text" id="tree-search" placeholder="搜尋 Substance..." disabled />
+        <p class="hint" id="tree-hint">成功讀取後，這裡會顯示樹狀 Substance 清單。</p>
+        <div id="tree-container"></div>
+    </div>
+
+    <div id="detail-panel">
+        <div id="drug-detail">
+            <h3>3. Drug intent / circumstance codes</h3>
+            <p class="hint" id="detail-hint">從左側點選一個 Substance，這裡會顯示對應的 6 種情境代碼（一次只能選一個）。</p>
+            <div id="drug-table-wrapper"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Drug_idx 資料
+    var currentDrugData = [];
+
+    // ICD10_desc 資料
+    var icdDescData = [];
+
+    // 樹狀結構
+    var drugTreeMap = {};   // Serial -> { row, children: [], parentID }
+    var drugTreeRoots = []; // root nodes
+
+    function showError(msg, err) {
+        var errorDiv = document.getElementById("error-msg");
+        if (err) {
+            console.error(msg, err);
+            errorDiv.textContent = msg + "\n" + err;
+        } else {
+            console.error(msg);
+            errorDiv.textContent = msg;
+        }
+    }
+
+    document.getElementById("file-input").addEventListener("change", handleFile, false);
+
+    function handleFile(event) {
+        var file = event.target.files[0];
+        var info = document.getElementById("file-info");
+        var err  = document.getElementById("error-msg");
+        var treeContainer = document.getElementById("tree-container");
+        var treeHint = document.getElementById("tree-hint");
+        var detailHint = document.getElementById("detail-hint");
+        var tableWrapper = document.getElementById("drug-table-wrapper");
+        var treeSearch = document.getElementById("tree-search");
+
+        err.textContent = "";
+        treeContainer.innerHTML = "";
+        tableWrapper.innerHTML = "";
+        if (treeHint) treeHint.textContent = "成功讀取後，這裡會顯示樹狀 Substance 清單。";
+        if (detailHint) detailHint.textContent = "從左側點選一個 Substance，這裡會顯示對應的 6 種情境代碼（一次只能選一個）。";
+        if (treeSearch) {
+            treeSearch.value = "";
+            treeSearch.disabled = true;
+        }
+
+        currentDrugData = [];
+        icdDescData = [];
+        drugTreeMap = {};
+        drugTreeRoots = [];
+
+        if (!file) {
+            info.textContent = "尚未選擇檔案。";
+            return;
+        }
+
+        info.textContent = "檔案：" + file.name;
+        console.log("選擇的檔案：", file);
+
+        if (typeof XLSX === "undefined") {
+            showError("XLSX 套件尚未載入，請確認網路連線或 CDN 是否被擋。");
+            return;
+        }
+
+        var reader = new FileReader();
+
+        reader.onload = function(e) {
+            try {
+                var data = new Uint8Array(e.target.result);
+                var workbook = XLSX.read(data, { type: "array" });
+
+                if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                    showError("Excel 檔中沒有工作表。");
+                    return;
+                }
+
+                // Drug_idx 的工作表：優先找名字叫 Drug_idx，其次第一張
+                var drugSheetName = "Drug_idx";
+                if (!workbook.Sheets[drugSheetName]) {
+                    drugSheetName = workbook.SheetNames[0];
+                }
+                var drugSheet = workbook.Sheets[drugSheetName];
+                info.textContent += "\n使用 Drug_idx 工作表：" + drugSheetName;
+
+                var drugJson = XLSX.utils.sheet_to_json(drugSheet, { defval: "" });
+
+                if (drugJson.length === 0) {
+                    showError("Drug_idx 工作表是空的，請確認 Excel 有資料。");
+                    return;
+                }
+
+                currentDrugData = drugJson.map(function(r, index) {
+                    return {
+                        Serial: String(
+                            (r.Serial !== undefined && r.Serial !== "") ? r.Serial :
+                            (r.serial !== undefined && r.serial !== "") ? r.serial :
+                            (index + 1)
+                        ),
+                        Substance: (r.Substance || r.substance || "").toString(),
+                        Level: (r.Level || r.level || ""),
+                        ParentID: (r.ParentID === "" || r.ParentID === null || r.ParentID === undefined)
+                            ? null
+                            : String(r.ParentID),
+                        Unintentional: (r.Unintentional || r.unintentional || "").toString(),
+                        SelfHarm: (r.SelfHarm || r.selfharm || "").toString(),
+                        Assault: (r.Assault || r.assault || "").toString(),
+                        Undetermined: (r.Undetermined || r.undetermined || "").toString(),
+                        SideEffect: (r.SideEffect || r.sideeffect || "").toString(),
+                        Underdosing: (r.Underdosing || r.underdosing || "").toString()
+                    };
+                }).filter(function(row) {
+                    return row.Substance !== "";
+                });
+
+                // 讀 ICD10_desc，若存在
+                var descSheetName = "ICD10_desc";
+                if (workbook.Sheets[descSheetName]) {
+                    var descSheet = workbook.Sheets[descSheetName];
+                    var descJson = XLSX.utils.sheet_to_json(descSheet, { defval: "" });
+                    icdDescData = descJson.map(function(r) {
+                        var code = (r.code || r.Code || "").toString().trim();
+                        if (!code) return null;
+                        var longdes = (r.longdes || r.Longdes || r.engdesc || r.Engdesc || "").toString();
+                        var flagRaw = (r.Flag || r.FLAG || r.flag || "").toString().trim().toLowerCase();
+                        var flag = (flagRaw === "true" || flagRaw === "1" || flagRaw === "y" || flagRaw === "yes");
+                        return {
+                            code: code,
+                            longdes: longdes,
+                            Flag: flag
+                        };
+                    }).filter(function(row){ return row !== null; });
+
+                    info.textContent += "\nICD10_desc 讀入筆數：" + icdDescData.length;
+                } else {
+                    info.textContent += "\n（未找到 ICD10_desc 工作表，延伸碼下拉選單將為空）";
+                    icdDescData = [];
+                }
+
+                console.log("Drug 資料（前 5 筆）：", currentDrugData.slice(0,5));
+                console.log("ICD10_desc 資料（前 5 筆）：", icdDescData.slice(0,5));
+
+                buildDrugTree(currentDrugData);
+                showDrugCodes(null);
+
+                if (treeHint) treeHint.textContent = "請使用搜尋或點選下方樹狀清單。";
+                if (detailHint) detailHint.textContent = "點選左側 Substance 後，這裡會出現對應的 6 欄內容（一次只能選一個）。";
+
+                if (treeSearch) {
+                    treeSearch.disabled = false;
+                }
+
+            } catch (ex) {
+                showError("讀取 Excel 時發生錯誤，請確認檔案格式與欄位名稱。", ex);
+            }
+        };
+
+        reader.onerror = function(e) {
+            showError("檔案讀取失敗。", e);
+        };
+
+        reader.readAsArrayBuffer(file);
+    }
+
+    // ===== 建立樹狀結構並渲染 =====
+    function buildDrugTree(data) {
+        var treeContainer = document.getElementById("tree-container");
+        treeContainer.innerHTML = "";
+
+        drugTreeMap = {};
+        drugTreeRoots = [];
+
+        data.forEach(function(row) {
+            var key = String(row.Serial);
+            drugTreeMap[key] = {
+                row: row,
+                children: [],
+                parentID: row.ParentID ? String(row.ParentID) : null
+            };
+        });
+
+        Object.keys(drugTreeMap).forEach(function(key) {
+            var node = drugTreeMap[key];
+            if (node.parentID && drugTreeMap[node.parentID]) {
+                drugTreeMap[node.parentID].children.push(node);
+            } else {
+                drugTreeRoots.push(node);
+            }
+        });
+
+        renderDrugTree("");
+    }
+
+    function renderDrugTree(filterText) {
+        var treeContainer = document.getElementById("tree-container");
+        treeContainer.innerHTML = "";
+        var q = (filterText || "").trim().toLowerCase();
+
+        function nodeMatches(node) {
+            if (!q) return true;
+            var s = (node.row.Substance || "").toLowerCase();
+            if (s.indexOf(q) !== -1) return true;
+            return node.children.some(function(child) { return nodeMatches(child); });
+        }
+
+        function createTreeNode(row) {
+            var li = document.createElement("li");
+            var span = document.createElement("span");
+            span.textContent = row.Substance;
+            span.className = "tree-node";
+
+            span.addEventListener("click", function(e) {
+                e.stopPropagation();
+                var selectedNodes = document.querySelectorAll(".tree-node.selected");
+                for (var i = 0; i < selectedNodes.length; i++) {
+                    selectedNodes[i].classList.remove("selected");
+                }
+                span.classList.add("selected");
+                showDrugCodes(row);
+            });
+
+            li.appendChild(span);
+            return li;
+        }
+
+        function appendNode(node, ul) {
+            if (!nodeMatches(node)) return;
+
+            var li = createTreeNode(node.row);
+
+            if (node.children.length > 0) {
+                var childUl = document.createElement("ul");
+                node.children.forEach(function(child) {
+                    appendNode(child, childUl);
+                });
+                if (childUl.children.length > 0) {
+                    li.appendChild(childUl);
+                }
+            }
+            ul.appendChild(li);
+        }
+
+        var rootUl = document.createElement("ul");
+        rootUl.className = "tree-root";
+        drugTreeRoots.forEach(function(node) {
+            appendNode(node, rootUl);
+        });
+
+        if (!rootUl.children.length) {
+            treeContainer.innerHTML = "<p class='hint'>沒有符合搜尋條件的節點。</p>";
+        } else {
+            treeContainer.appendChild(rootUl);
+        }
+    }
+
+    // ===== 右側：顯示 6 欄代碼 + 下方延伸碼下拉 & 複製（一次只能選一個代碼） =====
+    function showDrugCodes(row) {
+        var wrapper = document.getElementById("drug-table-wrapper");
+        var detailHint = document.getElementById("detail-hint");
+
+        if (!row) {
+            wrapper.innerHTML = "";
+            if (detailHint) {
+                detailHint.textContent = "從左側點選一個 Substance，這裡會顯示對應的 6 種情境代碼（一次只能選一個）。";
+            }
+            return;
+        }
+
+        if (detailHint) {
+            detailHint.textContent = "";
+        }
+
+        var u  = row.Unintentional || "";
+        var sh = row.SelfHarm      || "";
+        var as = row.Assault       || "";
+        var un = row.Undetermined  || "";
+        var se = row.SideEffect    || "";
+        var ud = row.Underdosing   || "";
+
+        // 這裡改成 radio（name 相同），一次只能選一個
+        function buildCodeCell(codeVal, label) {
+            var v = (codeVal || "").trim();
+            if (!v) {
+                return "<td>—</td>";
+            }
+            return (
+                "<td>" +
+                "<label class='code-label'>" +
+                "<input type='radio' name='drug-code-choice' class='code-check' " +
+                    "data-code='" + v.replace(/'/g, "&apos;") + "' " +
+                    "data-label='" + label + "' />" +
+                "<span class='code-text'>" + v + "</span>" +
+                "</label>" +
+                "</td>"
+            );
+        }
+
+        var html = "";
+        html += "<div class='substance-title'>Substance：" + row.Substance + "</div>";
+        html += "<table class='drug-table'>";
+        html += "  <thead>";
+        html += "    <tr>";
+        html += "      <th>Unintentional</th>";
+        html += "      <th>Self-harm</th>";
+        html += "      <th>Assault</th>";
+        html += "      <th>Undetermined</th>";
+        html += "      <th>Side effect</th>";
+        html += "      <th>Underdosing</th>";
+        html += "    </tr>";
+        html += "  </thead>";
+        html += "  <tbody>";
+        html += "    <tr>";
+        html +=        buildCodeCell(u,  "Unintentional");
+        html +=        buildCodeCell(sh, "Self-harm");
+        html +=        buildCodeCell(as, "Assault");
+        html +=        buildCodeCell(un, "Undetermined");
+        html +=        buildCodeCell(se, "Side effect");
+        html +=        buildCodeCell(ud, "Underdosing");
+        html += "    </tr>";
+        html += "  </tbody>";
+        html += "</table>";
+        html += "<div id='selected-codes-area' class='selected-codes-area'></div>";
+
+        wrapper.innerHTML = html;
+
+        var checks = wrapper.querySelectorAll(".code-check");
+        checks.forEach(function(ch) {
+            ch.addEventListener("change", function() {
+                updateSelectedCodesArea(wrapper);
+            });
+        });
+
+        updateSelectedCodesArea(wrapper);
+    }
+
+    // 依目前選到的 radio 更新下方「代碼名稱 + 下拉 + 複製」；一次最多一筆
+    function updateSelectedCodesArea(wrapper) {
+        var area = wrapper.querySelector("#selected-codes-area");
+        if (!area) return;
+
+        var checks = wrapper.querySelectorAll(".code-check:checked");
+        area.innerHTML = "";
+
+        if (checks.length === 0) {
+            area.innerHTML = "<div class='selected-codes-title'>尚未選擇任何代碼。</div>";
+            return;
+        }
+
+        var ch = checks[0]; // radio → 最多只會有一個
+        var baseCode = (ch.getAttribute("data-code") || "").trim();
+        var label    = ch.getAttribute("data-label") || "";
+
+        var title = document.createElement("div");
+        title.className = "selected-codes-title";
+        title.textContent = "已選擇代碼對應 ICD10_desc 延伸碼：";
+        area.appendChild(title);
+
+        var rowDiv = document.createElement("div");
+        rowDiv.className = "selected-code-row";
+
+        var baseSpan = document.createElement("span");
+        baseSpan.className = "selected-base";
+        baseSpan.innerHTML = label + " 基底代碼：<strong>" + baseCode + "</strong>";
+        rowDiv.appendChild(baseSpan);
+
+        var select = document.createElement("select");
+        select.className = "selected-dropdown";
+
+        var options = findIcdDescOptions(baseCode);
+        if (options.length > 0) {
+            options.forEach(function(o) {
+                var opt = document.createElement("option");
+                var firstLine = (o.longdes || "").split(/\r?\n/)[0];
+                opt.value = o.code;
+                opt.textContent = o.code + " — " + firstLine;
+                select.appendChild(opt);
+            });
+        } else {
+            var opt = document.createElement("option");
+            opt.value = baseCode;
+            opt.textContent = "找不到 Flag=TRUE 延伸碼，使用原代碼 " + baseCode;
+            select.appendChild(opt);
+        }
+        rowDiv.appendChild(select);
+
+        var copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "copy-final-btn";
+        copyBtn.textContent = "複製";
+        rowDiv.appendChild(copyBtn);
+
+        var msgSpan = document.createElement("span");
+        msgSpan.className = "selected-msg";
+        rowDiv.appendChild(msgSpan);
+
+        copyBtn.addEventListener("click", function() {
+            var codeToCopy = select.value || "";
+            copyTextToClipboard(codeToCopy, msgSpan);
+        });
+
+        area.appendChild(rowDiv);
+    }
+
+    // 從 ICD10_desc 尋找：與 baseCode「前綴相同」且 Flag=TRUE 的所有代碼
+    function findIcdDescOptions(baseCode) {
+        if (!icdDescData || !icdDescData.length) return [];
+        var prefix = (baseCode || "").trim();
+        if (!prefix) return [];
+        var simplePrefix = prefix.replace(/\s+/g, ""); // 去掉空白
+
+        return icdDescData.filter(function(r) {
+            if (!r.Flag) return false;
+            var c = (r.code || "").replace(/\s+/g, "");
+            return c.indexOf(simplePrefix) === 0 && c.length > simplePrefix.length;
+        });
+    }
+
+    function copyTextToClipboard(text, msgElem) {
+        function onSuccess() {
+            if (msgElem) {
+                msgElem.textContent = "已複製：" + text;
+                msgElem.style.color = "#065f46";
+            }
+        }
+        function onFail() {
+            if (msgElem) {
+                msgElem.textContent = "複製失敗，請手動選取。";
+                msgElem.style.color = "#c00";
+            }
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(onSuccess).catch(onFail);
+        } else {
+            try {
+                var textarea = document.createElement("textarea");
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                var ok = document.execCommand("copy");
+                document.body.removeChild(textarea);
+                ok ? onSuccess() : onFail();
+            } catch (e) {
+                console.error(e);
+                onFail();
+            }
+        }
+    }
+
+    // 搜尋輸入事件
+    var treeSearchInput = document.getElementById("tree-search");
+    if (treeSearchInput) {
+        treeSearchInput.addEventListener("input", function() {
+            var v = treeSearchInput.value || "";
+            renderDrugTree(v);
+        });
+    }
+</script>
+</body>
+</html>

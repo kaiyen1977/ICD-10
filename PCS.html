@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>ICD-10-PCS 組碼查詢（PCS_Table + PCS_idx）</title>
+  <!-- 讀取 Excel 用的 xlsx.js -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f7;
+      color: #222;
+    }
+    header {
+      padding: 16px 24px;
+      background: #1f2933;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.4rem;
+    }
+    header p {
+      margin: 0;
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    main {
+      padding: 16px 24px 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .layout {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .index-panel {
+      flex: 0 0 30%;
+      min-width: 260px;
+    }
+    .content-panel {
+      flex: 1 1 0;
+    }
+    section.card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    }
+    .section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .section-title span.badge {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      color: #374151;
+    }
+    label {
+      font-size: 0.9rem;
+      display: inline-block;
+      margin-bottom: 4px;
+    }
+    input[type="file"] {
+      margin-top: 4px;
+    }
+    select {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      font-size: 0.9rem;
+      background: #fff;
+    }
+    select:disabled {
+      background: #f3f4f6;
+      color: #9ca3af;
+    }
+    .select-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+    }
+    .status {
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: #4b5563;
+    }
+    .status.error {
+      color: #b91c1c;
+    }
+    .status.success {
+      color: #065f46;
+    }
+    #currentPath {
+      font-size: 0.85rem;
+      margin-top: 6px;
+      color: #4b5563;
+    }
+    .small-note {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .four-cols {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .option-column {
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      padding: 8px;
+      background: #f9fafb;
+      display: flex;
+      flex-direction: column;
+      max-height: 260px;
+    }
+    .option-column h3 {
+      margin: 0 0 4px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #374151;
+    }
+    .option-list {
+      overflow-y: auto;
+      margin-top: 4px;
+      padding-right: 2px;
+    }
+    .option-btn {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      padding: 4px 8px;
+      margin-bottom: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      background: #fff;
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .option-btn:hover {
+      background: #e5f0ff;
+    }
+    .option-btn.active {
+      background: #2563eb;
+      color: #fff;
+      border-color: #1d4ed8;
+      transform: translateY(-1px);
+    }
+    .option-code {
+      font-weight: 600;
+      margin-right: 4px;
+    }
+    .option-desc {
+      opacity: 0.9;
+    }
+    .hidden {
+      display: none;
+    }
+    #resultSection table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 0.85rem;
+    }
+    #resultSection th, #resultSection td {
+      border: 1px solid #e5e7eb;
+      padding: 6px 8px;
+    }
+    #resultSection th {
+      background: #f3f4f6;
+      text-align: left;
+    }
+    #resultSection td.code-cell {
+      font-family: "Consolas", "Menlo", monospace;
+      font-weight: 600;
+    }
+    .btn-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 8px;
+      gap: 8px;
+    }
+    button.simple-btn {
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      padding: 4px 10px;
+      font-size: 0.8rem;
+      background: #fff;
+      cursor: pointer;
+    }
+    button.simple-btn:hover {
+      background: #f3f4f6;
+    }
+    .copy-btn {
+      font-size: 0.8rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .copy-btn:hover {
+      background: #e5f0ff;
+      border-color: #2563eb;
+    }
+
+    /* 左邊索引樣式（樹狀） */
+    #indexSearch {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+    }
+    #indexSearch:disabled {
+      background: #f3f4f6;
+      color: #9ca3af;
+    }
+    .index-list {
+      max-height: 650px;
+      overflow-y: auto;
+      margin-top: 4px;
+      font-size: 0.8rem;
+    }
+    .tree-group {
+      margin-bottom: 6px;
+    }
+    .tree-group-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #4b5563;
+      margin: 4px 0;
+    }
+    .tree-node-header {
+      padding: 2px 4px 2px 14px;
+      font-size: 0.82rem;
+      cursor: default;
+      position: relative;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    .tree-node-header.collapsible {
+      cursor: pointer;
+    }
+    .tree-node-header.collapsible::before {
+      content: "▸";
+      position: absolute;
+      left: 0;
+      top: 2px;
+      font-size: 0.7rem;
+      color: #4b5563;
+    }
+    .tree-node-header.collapsible:not(.collapsed)::before {
+      content: "▾";
+    }
+    .tree-node-header.leaf::before {
+      content: "•";
+      position: absolute;
+      left: 4px;
+      top: 3px;
+      font-size: 0.6rem;
+      color: #6b7280;
+    }
+    .tree-children {
+      margin-left: 18px;
+      margin-bottom: 2px;
+    }
+    .tree-children.collapsed {
+      display: none;
+    }
+    .tree-child {
+      font-size: 0.78rem;
+      margin: 1px 0;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    .tree-child.see {
+      color: #b91c1c; /* see... 用紅色 */
+    }
+    .tree-child.clickable {
+      cursor: pointer;
+    }
+    .tree-child.clickable:hover {
+      background: #e5f0ff;
+    }
+    .tree-child-code {
+      font-family: "Consolas","Menlo",monospace;
+      font-weight: 600;
+      margin-left: 4px;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>ICD-10-PCS 組碼查詢工具（PCS_Table + PCS_idx）</h1>
+  <p>左側：索引（PCS_idx） → 右側：PCS_Table 組碼查詢與代碼說明。</p>
+</header>
+
+<main>
+  <div class="layout">
+    <!-- 左邊索引區 -->
+    <aside class="index-panel">
+      <section class="card">
+        <div class="section-title">
+          <span class="badge">Index</span> 索引查找（PCS_idx）
+        </div>
+        <input id="indexSearch" type="text" placeholder="搜尋 Index / Category / use / see ..." disabled>
+        <div id="indexStatus" class="small-note">請先載入 Excel 檔。</div>
+        <div id="indexList" class="index-list"></div>
+      </section>
+    </aside>
+
+    <!-- 右側主功能 -->
+    <div class="content-panel">
+      <!-- Step 1: 載入 Excel -->
+      <section class="card">
+        <div class="section-title">
+          <span class="badge">Step 1</span> 載入 Excel（PCS_Table / PCS_idx）
+        </div>
+        <label for="fileInput">選擇包含 <code>PCS_Table</code> 與 <code>PCS_idx</code> 的 Excel 檔（.xlsx / .xls）：</label>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" />
+        <div id="loadStatus" class="status"></div>
+        <div class="small-note">
+          PCS_Table 欄位：section, bodysystem, operation, bodypart, approach, device, qualifer, longdes, （code 可有可無）。<br>
+          PCS_idx 欄位：Index_Name, Category~Category5, Code3~Code7, Other1~Other7。
+        </div>
+      </section>
+
+      <!-- Step 2: 三個主選單 -->
+      <section class="card">
+        <div class="section-title">
+          <span class="badge">Step 2</span> 選擇 Section / Body System / Operation
+        </div>
+        <div class="select-row">
+          <div class="field">
+            <label for="sectionSelect">Section</label>
+            <select id="sectionSelect" disabled>
+              <option value="">請先載入 Excel</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="bodysystemSelect">Body System</label>
+            <select id="bodysystemSelect" disabled>
+              <option value="">請先選 Section</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="operationSelect">Operation</label>
+            <select id="operationSelect" disabled>
+              <option value="">請先選 Body System</option>
+            </select>
+          </div>
+        </div>
+        <div id="currentPath"></div>
+      </section>
+
+      <!-- Step 3: 四欄表單 -->
+      <section id="detailsSection" class="card hidden">
+        <div class="section-title">
+          <span class="badge">Step 3</span> 選擇 Bodypart / Approach / Device / Qualifer
+        </div>
+        <div class="four-cols">
+          <div class="option-column">
+            <h3>Bodypart</h3>
+            <div id="bodypartOptions" class="option-list"></div>
+          </div>
+          <div class="option-column">
+            <h3>Approach</h3>
+            <div id="approachOptions" class="option-list"></div>
+          </div>
+          <div class="option-column">
+            <h3>Device</h3>
+            <div id="deviceOptions" class="option-list"></div>
+          </div>
+          <div class="option-column">
+            <h3>Qualifer</h3>
+            <div id="qualiferOptions" class="option-list"></div>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button id="resetSelections" class="simple-btn" type="button">清除四欄選擇</button>
+        </div>
+      </section>
+
+      <!-- Step 4: 結果 -->
+      <section id="resultSection" class="card hidden">
+        <div class="section-title">
+          <span class="badge">Step 4</span> 對應結果
+        </div>
+        <div id="selectionSummary" class="small-note"></div>
+        <div id="resultInfo" class="status"></div>
+        <table id="resultTable">
+          <thead>
+            <tr>
+              <th style="width: 140px;">Code</th>
+              <th>Long Description</th>
+              <th style="width: 80px;">複製</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script>
+  // ===== 全域變數 =====
+  let pcsRows = [];     // PCS_Table
+  let idxRows = [];     // PCS_idx
+  let idxGrouped = {};  // 依 Index_Name 分組
+
+  const selections = {
+    section: "",
+    bodysystem: "",
+    operation: "",
+    bodypart: "",
+    approach: "",
+    device: "",
+    qualifer: ""
+  };
+
+  // DOM
+  const fileInput = document.getElementById("fileInput");
+  const loadStatus = document.getElementById("loadStatus");
+
+  const sectionSelect = document.getElementById("sectionSelect");
+  const bodysystemSelect = document.getElementById("bodysystemSelect");
+  const operationSelect = document.getElementById("operationSelect");
+  const currentPath = document.getElementById("currentPath");
+
+  const detailsSection = document.getElementById("detailsSection");
+  const bodypartOptions = document.getElementById("bodypartOptions");
+  const approachOptions = document.getElementById("approachOptions");
+  const deviceOptions = document.getElementById("deviceOptions");
+  const qualiferOptions = document.getElementById("qualiferOptions");
+  const resetSelectionsBtn = document.getElementById("resetSelections");
+
+  const resultSection = document.getElementById("resultSection");
+  const selectionSummary = document.getElementById("selectionSummary");
+  const resultInfo = document.getElementById("resultInfo");
+  const resultTableBody = document.querySelector("#resultTable tbody");
+
+  const indexSearch = document.getElementById("indexSearch");
+  const indexList = document.getElementById("indexList");
+  const indexStatus = document.getElementById("indexStatus");
+
+  // ===== PCS_Table 小工具 =====
+
+  function getUniqueValues(rows, field) {
+    const set = new Set();
+    rows.forEach(r => {
+      const v = (r[field] !== undefined && r[field] !== null) ? String(r[field]).trim() : "";
+      if (v) set.add(v);
+    });
+    return Array.from(set);
+  }
+
+  // 將 "1 Bypass" 拆成 { code, desc, label }
+  function parseOptionValue(v) {
+    const str = String(v || "").trim();
+    if (!str) return { code: "", desc: "", label: "" };
+    const idx = str.indexOf(" ");
+    if (idx === -1) {
+      return { code: str, desc: "", label: str };
+    }
+    const code = str.slice(0, idx);
+    const desc = str.slice(idx + 1).trim();
+    return { code, desc, label: code + " – " + desc };
+  }
+
+  function populateSelect(selectElem, values, placeholder) {
+    selectElem.innerHTML = "";
+    const defaultOpt = document.createElement("option");
+    defaultOpt.value = "";
+    defaultOpt.textContent = placeholder;
+    selectElem.appendChild(defaultOpt);
+
+    values.sort().forEach(v => {
+      const { label } = parseOptionValue(v);
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = label || v;
+      selectElem.appendChild(opt);
+    });
+  }
+
+  function renderOptionButtons(container, values, fieldName) {
+    container.innerHTML = "";
+    values.sort().forEach(v => {
+      const parsed = parseOptionValue(v);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "option-btn";
+      btn.dataset.value = v;
+      btn.dataset.field = fieldName;
+
+      const codeSpan = document.createElement("span");
+      codeSpan.className = "option-code";
+      codeSpan.textContent = parsed.code;
+
+      const descSpan = document.createElement("span");
+      descSpan.className = "option-desc";
+      descSpan.textContent = parsed.desc || parsed.code;
+
+      btn.appendChild(codeSpan);
+      btn.appendChild(descSpan);
+
+      btn.addEventListener("click", () => {
+        Array.from(container.querySelectorAll(".option-btn")).forEach(b => {
+          b.classList.remove("active");
+        });
+        btn.classList.add("active");
+        selections[fieldName] = v;
+        updateSelectionSummary();
+        tryUpdateResult();
+      });
+
+      container.appendChild(btn);
+    });
+  }
+
+  function updateCurrentPath() {
+    const parts = [];
+    if (selections.section) {
+      parts.push("Section: " + parseOptionValue(selections.section).label);
+    }
+    if (selections.bodysystem) {
+      parts.push("Body System: " + parseOptionValue(selections.bodysystem).label);
+    }
+    if (selections.operation) {
+      parts.push("Operation: " + parseOptionValue(selections.operation).label);
+    }
+    currentPath.textContent = parts.length
+      ? "目前選擇路徑： " + parts.join(" → ")
+      : "";
+  }
+
+  function updateSelectionSummary() {
+    const parts = [];
+    ["section","bodysystem","operation","bodypart","approach","device","qualifer"].forEach(f => {
+      if (selections[f]) {
+        const parsed = parseOptionValue(selections[f]);
+        parts.push(f + ": " + parsed.label);
+      }
+    });
+    selectionSummary.textContent = parts.length
+      ? "目前完整選擇： " + parts.join(" ｜ ")
+      : "尚未完成所有欄位選擇。";
+  }
+
+  function clearDetailSelections() {
+    ["bodypart","approach","device","qualifer"].forEach(f => {
+      selections[f] = "";
+    });
+    [bodypartOptions, approachOptions, deviceOptions, qualiferOptions].forEach(c => {
+      Array.from(c.querySelectorAll(".option-btn")).forEach(b => b.classList.remove("active"));
+    });
+    updateSelectionSummary();
+    resultSection.classList.add("hidden");
+  }
+
+  function copyToClipboard(text) {
+    const msgPrefix = "已複製代碼：";
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        resultInfo.className = "status success";
+        resultInfo.textContent = msgPrefix + text;
+      }).catch(() => {
+        fallbackCopy(text, msgPrefix);
+      });
+    } else {
+      fallbackCopy(text, msgPrefix);
+    }
+  }
+
+  function fallbackCopy(text, msgPrefix) {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      resultInfo.className = "status success";
+      resultInfo.textContent = msgPrefix + text;
+    } catch (e) {
+      resultInfo.className = "status error";
+      resultInfo.textContent = "無法複製代碼，請手動選取。";
+    }
+    document.body.removeChild(textarea);
+  }
+
+  function tryUpdateResult() {
+    if (!selections.section ||
+        !selections.bodysystem ||
+        !selections.operation ||
+        !selections.bodypart ||
+        !selections.approach ||
+        !selections.device ||
+        !selections.qualifer) {
+      resultSection.classList.add("hidden");
+      return;
+    }
+
+    const matches = pcsRows.filter(r => {
+      function same(field) {
+        const v = (r[field] !== undefined && r[field] !== null) ? String(r[field]).trim() : "";
+        const sel = selections[field] ? String(selections[field]).trim() : "";
+        return v === sel;
+      }
+      return same("section") &&
+             same("bodysystem") &&
+             same("operation") &&
+             same("bodypart") &&
+             same("approach") &&
+             same("device") &&
+             same("qualifer");
+    });
+
+    resultTableBody.innerHTML = "";
+
+    if (matches.length === 0) {
+      resultSection.classList.remove("hidden");
+      resultInfo.className = "status error";
+      resultInfo.textContent = "找不到符合這一組選項的代碼。請確認 PCS_Table 資料。";
+      return;
+    }
+
+    resultSection.classList.remove("hidden");
+    resultInfo.className = "status success";
+    resultInfo.innerHTML = "找到 <strong>" + matches.length + "</strong> 筆符合結果。";
+
+    matches.forEach(row => {
+      const tr = document.createElement("tr");
+
+      let code = (row.code !== undefined && row.code !== null)
+        ? String(row.code).trim()
+        : "";
+
+      if (!code) {
+        const parts = ["section","bodysystem","operation","bodypart","approach","device","qualifer"]
+          .map(f => parseOptionValue(row[f]).code || "");
+        code = parts.join("");
+      }
+
+      const codeCell = document.createElement("td");
+      codeCell.className = "code-cell";
+      codeCell.textContent = code;
+
+      const descCell = document.createElement("td");
+      const longdes = (row.longdes !== undefined && row.longdes !== null)
+        ? String(row.longdes).trim()
+        : "";
+      descCell.textContent = longdes || "(longdes 空白)";
+
+      const actionCell = document.createElement("td");
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "copy-btn";
+      copyBtn.textContent = "複製";
+      copyBtn.addEventListener("click", () => copyToClipboard(code));
+      actionCell.appendChild(copyBtn);
+
+      tr.appendChild(codeCell);
+      tr.appendChild(descCell);
+      tr.appendChild(actionCell);
+      resultTableBody.appendChild(tr);
+    });
+  }
+
+  // ===== PCS_idx 索引處理 =====
+
+  function buildIndexStructure() {
+    if (!idxRows.length) {
+      idxGrouped = {};
+      indexList.innerHTML = "";
+      indexSearch.disabled = true;
+      indexStatus.textContent = "尚未載入 PCS_idx 或無資料。";
+      return;
+    }
+
+    // 先依 Index_Name 全部排序（忽略大小寫，支援數字）
+    idxRows.sort((a, b) => {
+      const nameA = (a.Index_Name || "未命名").toString().trim();
+      const nameB = (b.Index_Name || "未命名").toString().trim();
+      return nameA.localeCompare(nameB, "en", { numeric: true, sensitivity: "base" });
+    });
+
+    // 再分組
+    idxGrouped = {};
+    idxRows.forEach(row => {
+      const name = (row.Index_Name || "未命名").toString().trim() || "未命名";
+      if (!idxGrouped[name]) idxGrouped[name] = [];
+      idxGrouped[name].push(row);
+    });
+
+    indexSearch.disabled = false;
+    indexStatus.textContent = "已載入 PCS_idx，共 " + idxRows.length + " 列。";
+    renderIndexTree("");
+  }
+
+  function buildRowPath(row) {
+    const parts = [];
+    ["Category","Category2","Category3","Category4","Category5"].forEach(f => {
+      const v = (row[f] || "").toString().trim();
+      if (v) parts.push(v);
+    });
+    return parts.join(" › ");
+  }
+
+  function buildRowCodeLabel(row) {
+    const order = [7,6,5,4,3];
+    for (const len of order) {
+      const key = "Code" + len;
+      const v = (row[key] || "").toString().trim();
+      if (v) {
+        return { code: v, len };
+      }
+    }
+    return { code: "", len: 0 };
+  }
+
+  function rowMatchesFilter(row, name, qLower) {
+    const texts = [];
+    texts.push(name);
+    texts.push((row.Index_Name || "").toString());
+    ["Category","Category2","Category3","Category4","Category5"].forEach(f => {
+      texts.push((row[f] || "").toString());
+    });
+    for (let i = 1; i <= 7; i++) {
+      texts.push((row["Other" + i] || "").toString());
+    }
+    for (let i = 3; i <= 7; i++) {
+      texts.push((row["Code" + i] || "").toString());
+    }
+    const hay = texts.join(" ").toLowerCase();
+    return !qLower || hay.includes(qLower);
+  }
+
+  function renderIndexTree(filterText) {
+    const q = (filterText || "").toLowerCase();
+    indexList.innerHTML = "";
+
+    // 先依第一個字母分組 (A/B/C...)
+    const letterMap = {}; // letter -> { name -> rows[] }
+
+    Object.keys(idxGrouped).forEach(name => {
+      const rows = idxGrouped[name];
+      const letter = (name[0] || "#").toUpperCase();
+      rows.forEach(row => {
+        if (!rowMatchesFilter(row, name, q)) return;
+        if (!letterMap[letter]) letterMap[letter] = {};
+        if (!letterMap[letter][name]) letterMap[letter][name] = [];
+        letterMap[letter][name].push(row);
+      });
+    });
+
+    const letters = Object.keys(letterMap).sort((a, b) =>
+      a.localeCompare(b, "en", { numeric: true, sensitivity: "base" })
+    );
+    let anyShown = letters.length > 0;
+
+    letters.forEach(letter => {
+      const groupDiv = document.createElement("div");
+      groupDiv.className = "tree-group";
+
+      const groupTitle = document.createElement("div");
+      groupTitle.className = "tree-group-title";
+      groupTitle.textContent = letter;
+      groupDiv.appendChild(groupTitle);
+
+      const names = Object.keys(letterMap[letter]).sort((a, b) =>
+        a.localeCompare(b, "en", { numeric: true, sensitivity: "base" })
+      );
+
+      names.forEach(name => {
+        const rows = letterMap[letter][name];
+        const node = document.createElement("div");
+
+        const header = document.createElement("div");
+        header.className = "tree-node-header";
+        header.textContent = name;
+
+        const childrenContainer = document.createElement("div");
+        childrenContainer.className = "tree-children collapsed";
+
+        rows.forEach(row => {
+          const path = buildRowPath(row);
+          const codeInfo = buildRowCodeLabel(row);
+          const others = [];
+          for (let i = 1; i <= 7; i++) {
+            const v = (row["Other" + i] || "").toString().trim();
+            if (v) others.push(v);
+          }
+
+          // 這一列完全空，就略過
+          if (!path && !codeInfo.code && !others.length) return;
+
+          // 若有 path 或 code，先放一行
+          if (path || codeInfo.code) {
+            const child = document.createElement("div");
+            child.className = "tree-child";
+            if (path) {
+              child.textContent = path;
+            } else {
+              child.textContent = "";
+            }
+
+            if (codeInfo.code) {
+              const codeSpan = document.createElement("span");
+              codeSpan.className = "tree-child-code";
+              codeSpan.textContent = " " + codeInfo.code;
+              child.appendChild(codeSpan);
+            }
+
+            const textLower = child.textContent.trim().toLowerCase();
+            if (textLower.startsWith("see ")) {
+              child.classList.add("see");
+            }
+
+            if (codeInfo.code) {
+              child.classList.add("clickable");
+              child.addEventListener("click", () => applyIndexRow(row));
+            }
+
+            childrenContainer.appendChild(child);
+          }
+
+          // Other1~Other7 每一個獨立一行
+          others.forEach(text => {
+            const child = document.createElement("div");
+            child.className = "tree-child";
+            child.textContent = text;
+            const lower = text.trim().toLowerCase();
+            if (lower.startsWith("see ")) {
+              child.classList.add("see");
+            }
+            childrenContainer.appendChild(child);
+          });
+        });
+
+        // 根據有沒有 children 決定 header 樣式
+        if (!childrenContainer.children.length) {
+          header.className = "tree-node-header leaf";
+        } else {
+          header.className = "tree-node-header collapsible collapsed";
+          header.addEventListener("click", () => {
+            childrenContainer.classList.toggle("collapsed");
+            header.classList.toggle("collapsed");
+          });
+        }
+
+        node.appendChild(header);
+        if (childrenContainer.children.length) {
+          node.appendChild(childrenContainer);
+        }
+        groupDiv.appendChild(node);
+      });
+
+      indexList.appendChild(groupDiv);
+    });
+
+    if (!anyShown) {
+      const msg = document.createElement("div");
+      msg.className = "small-note";
+      msg.textContent = "沒有符合搜尋條件的索引。";
+      indexList.appendChild(msg);
+    }
+  }
+
+  // 從索引列的 code 前綴帶到右邊
+  function applyIndexRow(row) {
+    if (!pcsRows.length) {
+      resultInfo.className = "status error";
+      resultInfo.textContent = "尚未載入 PCS_Table，無法從索引套用。";
+      return;
+    }
+
+    const order = [7,6,5,4,3];
+    let partial = "";
+    for (const L of order) {
+      const key = "Code" + L;
+      const v = (row[key] || "").toString().trim();
+      if (v) {
+        partial = v;
+        break;
+      }
+    }
+    if (!partial) {
+      resultInfo.className = "status error";
+      resultInfo.textContent = "此索引列沒有 Code3~Code7 任一代碼。";
+      return;
+    }
+
+    const chars = partial.split("").slice(0, 7);
+
+    function setSelectByCode(selectElem, char, fieldName) {
+      if (!char) return;
+      let found = false;
+      for (const opt of selectElem.options) {
+        if (!opt.value) continue;
+        const parsed = parseOptionValue(opt.value);
+        if (parsed.code === char) {
+          selectElem.value = opt.value;
+          found = true;
+          break;
+        }
+      }
+      selectElem.dispatchEvent(new Event("change"));
+      if (!found) {
+        console.warn("在", fieldName, "找不到 code", char);
+      }
+    }
+
+    function setOptionByCode(container, char, fieldName) {
+      if (!char) return;
+      const btns = container.querySelectorAll(".option-btn");
+      let found = false;
+      btns.forEach(btn => {
+        const parsed = parseOptionValue(btn.dataset.value);
+        if (parsed.code === char) {
+          btn.click();
+          found = true;
+        }
+      });
+      if (!found) {
+        console.warn("在", fieldName, "找不到 code", char);
+      }
+    }
+
+    if (chars[0]) setSelectByCode(sectionSelect, chars[0], "section");
+    if (chars[1]) setSelectByCode(bodysystemSelect, chars[1], "bodysystem");
+    if (chars[2]) setSelectByCode(operationSelect, chars[2], "operation");
+
+    if (chars[3]) setOptionByCode(bodypartOptions, chars[3], "bodypart");
+    if (chars[4]) setOptionByCode(approachOptions, chars[4], "approach");
+    if (chars[5]) setOptionByCode(deviceOptions, chars[5], "device");
+    if (chars[6]) setOptionByCode(qualiferOptions, chars[6], "qualifer");
+
+    updateSelectionSummary();
+    tryUpdateResult();
+  }
+
+  // ===== 事件綁定 =====
+
+  indexSearch.addEventListener("input", () => {
+    renderIndexTree(indexSearch.value);
+  });
+
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    pcsRows = [];
+    idxRows = [];
+    idxGrouped = {};
+
+    sectionSelect.disabled = true;
+    bodysystemSelect.disabled = true;
+    operationSelect.disabled = true;
+    sectionSelect.innerHTML = "<option value=''>請先載入 Excel</option>";
+    bodysystemSelect.innerHTML = "<option value=''>請先選 Section</option>";
+    operationSelect.innerHTML = "<option value=''>請先選 Body System</option>";
+    detailsSection.classList.add("hidden");
+    resultSection.classList.add("hidden");
+    indexList.innerHTML = "";
+    indexSearch.value = "";
+    indexSearch.disabled = true;
+    indexStatus.textContent = "請先載入 Excel 檔。";
+
+    Object.keys(selections).forEach(k => selections[k] = "");
+
+    if (!file) {
+      loadStatus.className = "status";
+      loadStatus.textContent = "";
+      return;
+    }
+
+    loadStatus.className = "status";
+    loadStatus.textContent = "載入中…";
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+
+        // PCS_Table
+        let tableSheetName = "PCS_Table";
+        if (!workbook.Sheets[tableSheetName]) {
+          tableSheetName = workbook.SheetNames[0];
+        }
+        const sheetTable = workbook.Sheets[tableSheetName];
+        pcsRows = XLSX.utils.sheet_to_json(sheetTable, { defval: "" });
+
+        if (!pcsRows.length) {
+          throw new Error("PCS_Table（或第一張工作表）資料列為 0");
+        }
+
+        const sections = getUniqueValues(pcsRows, "section");
+        populateSelect(sectionSelect, sections, "請選擇 Section");
+        sectionSelect.disabled = false;
+        bodysystemSelect.disabled = true;
+        operationSelect.disabled = true;
+
+        // PCS_idx
+        const idxSheetName = "PCS_idx";
+        if (workbook.Sheets[idxSheetName]) {
+          const sheetIdx = workbook.Sheets[idxSheetName];
+          idxRows = XLSX.utils.sheet_to_json(sheetIdx, { defval: "" });
+          buildIndexStructure();
+        } else {
+          idxRows = [];
+          buildIndexStructure();
+        }
+
+        loadStatus.className = "status success";
+        loadStatus.textContent =
+          "載入成功：PCS_Table 共 " + pcsRows.length +
+          " 列，PCS_idx " + (idxRows.length ? "共 " + idxRows.length + " 列" : "未找到。") +
+          "（使用工作表：" + tableSheetName + "）。";
+      } catch (err) {
+        console.error(err);
+        loadStatus.className = "status error";
+        loadStatus.textContent = "載入或解析 Excel 發生錯誤：" + err.message;
+      }
+    };
+    reader.onerror = function(err) {
+      console.error(err);
+      loadStatus.className = "status error";
+      loadStatus.textContent = "無法讀取檔案。";
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  // Section 選擇
+  sectionSelect.addEventListener("change", () => {
+    selections.section = sectionSelect.value || "";
+    selections.bodysystem = "";
+    selections.operation = "";
+    bodysystemSelect.disabled = true;
+    operationSelect.disabled = true;
+    bodysystemSelect.innerHTML = "<option value=''>請先選 Section</option>";
+    operationSelect.innerHTML = "<option value=''>請先選 Body System</option>";
+    detailsSection.classList.add("hidden");
+    resultSection.classList.add("hidden");
+    clearDetailSelections();
+    updateCurrentPath();
+    updateSelectionSummary();
+
+    if (!selections.section) return;
+
+    const filtered = pcsRows.filter(r => {
+      const v = (r.section !== undefined && r.section !== null) ? String(r.section).trim() : "";
+      return v === String(selections.section).trim();
+    });
+    const bodysystems = getUniqueValues(filtered, "bodysystem");
+    populateSelect(bodysystemSelect, bodysystems, "請選擇 Body System");
+    bodysystemSelect.disabled = false;
+  });
+
+  // Body System 選擇
+  bodysystemSelect.addEventListener("change", () => {
+    selections.bodysystem = bodysystemSelect.value || "";
+    selections.operation = "";
+    operationSelect.disabled = true;
+    operationSelect.innerHTML = "<option value=''>請先選 Body System</option>";
+    detailsSection.classList.add("hidden");
+    resultSection.classList.add("hidden");
+    clearDetailSelections();
+    updateCurrentPath();
+    updateSelectionSummary();
+
+    if (!selections.section || !selections.bodysystem) return;
+
+    const filtered = pcsRows.filter(r => {
+      const s = (r.section !== undefined && r.section !== null) ? String(r.section).trim() : "";
+      const b = (r.bodysystem !== undefined && r.bodysystem !== null) ? String(r.bodysystem).trim() : "";
+      return s === String(selections.section).trim() &&
+             b === String(selections.bodysystem).trim();
+    });
+    const operations = getUniqueValues(filtered, "operation");
+    populateSelect(operationSelect, operations, "請選擇 Operation");
+    operationSelect.disabled = false;
+  });
+
+  // Operation 選擇
+  operationSelect.addEventListener("change", () => {
+    selections.operation = operationSelect.value || "";
+    detailsSection.classList.add("hidden");
+    resultSection.classList.add("hidden");
+    clearDetailSelections();
+    updateCurrentPath();
+    updateSelectionSummary();
+
+    if (!selections.section || !selections.bodysystem || !selections.operation) return;
+
+    const filtered = pcsRows.filter(r => {
+      function val(field) {
+        return (r[field] !== undefined && r[field] !== null) ? String(r[field]).trim() : "";
+      }
+      return val("section") === String(selections.section).trim() &&
+             val("bodysystem") === String(selections.bodysystem).trim() &&
+             val("operation") === String(selections.operation).trim();
+    });
+
+    const bodyparts = getUniqueValues(filtered, "bodypart");
+    const approaches = getUniqueValues(filtered, "approach");
+    const devices = getUniqueValues(filtered, "device");
+    const qualifers = getUniqueValues(filtered, "qualifer");
+
+    renderOptionButtons(bodypartOptions, bodyparts, "bodypart");
+    renderOptionButtons(approachOptions, approaches, "approach");
+    renderOptionButtons(deviceOptions, devices, "device");
+    renderOptionButtons(qualiferOptions, qualifers, "qualifer");
+
+    detailsSection.classList.remove("hidden");
+  });
+
+  resetSelectionsBtn.addEventListener("click", () => {
+    clearDetailSelections();
+  });
+</script>
+</body>
+</html>

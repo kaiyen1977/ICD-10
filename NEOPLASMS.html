@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>ICD-10 Neoplasms 索引（Neoplasms + ICD10_desc）</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f7;
+      color: #222;
+    }
+    header {
+      padding: 16px 24px;
+      background: #1f2933;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.3rem;
+    }
+    header p {
+      margin: 0;
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    main {
+      padding: 16px 24px 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .layout {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .index-panel {
+      flex: 0 0 40%;
+      min-width: 280px;
+    }
+    .content-panel {
+      flex: 1 1 0;
+    }
+    section.card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+    .section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .badge {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      color: #374151;
+    }
+    label {
+      font-size: 0.88rem;
+      display: inline-block;
+      margin-bottom: 4px;
+    }
+    input[type="file"] {
+      margin-top: 4px;
+    }
+    .status {
+      margin-top: 6px;
+      font-size: 0.85rem;
+      color: #4b5563;
+      white-space: pre-line;
+    }
+    .status.error {
+      color: #b91c1c;
+    }
+    .status.success {
+      color: #065f46;
+    }
+    .small-note {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-top: 4px;
+      white-space: pre-line;
+    }
+
+    /* 左側索引 + 搜尋 */
+    #neoSearch {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+    }
+    #neoSearch:disabled {
+      background: #f3f4f6;
+      color: #9ca3af;
+    }
+    #neoList {
+      max-height: 650px;
+      overflow-y: auto;
+      font-size: 0.82rem;
+      border-top: 1px solid #e5e7eb;
+      margin-top: 6px;
+      padding-top: 4px;
+    }
+    .neo-row {
+      padding: 2px 4px;
+      margin: 1px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .neo-row:hover {
+      background: #e5f0ff;
+    }
+    .neo-row.selected {
+      background: #2563eb;
+      color: #fff;
+    }
+    .neo-name-main {
+      font-weight: 500;
+    }
+    .neo-name-parent {
+      opacity: 0.7;
+      margin-left: 4px;
+    }
+
+    /* 右側 Neoplasm 6 欄代碼 */
+    .detail-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .detail-block {
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+    }
+    .detail-block code {
+      font-family: "Consolas","Menlo",monospace;
+      font-weight: 600;
+    }
+    table.code-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 0.84rem;
+    }
+    table.code-table th,
+    table.code-table td {
+      border: 1px solid #e5e7eb;
+      padding: 6px 8px;
+    }
+    table.code-table th {
+      background: #f3f4f6;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .code-btn {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-family: "Consolas","Menlo",monospace;
+      white-space: nowrap;
+    }
+    .code-btn:hover {
+      background: #e5f0ff;
+      border-color: #2563eb;
+    }
+    .code-btn.active {
+      background: #2563eb;
+      color: #fff;
+      border-color: #1d4ed8;
+    }
+
+    /* 最終 ICD10_desc 選擇區 */
+    select.icd-select {
+      min-width: 320px;
+      max-width: 100%;
+      padding: 4px 6px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      font-size: 0.85rem;
+    }
+    .copy-btn {
+      font-size: 0.8rem;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      cursor: pointer;
+      margin-left: 8px;
+      white-space: nowrap;
+    }
+    .copy-btn:hover {
+      background: #e5f0ff;
+      border-color: #2563eb;
+    }
+    .longdes-box {
+      margin-top: 10px;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      font-size: 0.84rem;
+      max-height: 260px;
+      overflow-y: auto;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>ICD-10 Neoplasms 索引工具</h1>
+  <p>左：Neoplasms 索引搜尋；右：六欄代碼 + ICD10_desc 延伸碼（Flag 轉換）。</p>
+</header>
+
+<main>
+  <div class="layout">
+    <!-- 左側：索引與搜尋 -->
+    <aside class="index-panel">
+      <section class="card">
+        <div class="section-title">
+          <span class="badge">Step 1</span> 載入 Excel（Neoplasms + ICD10_desc）
+        </div>
+        <label for="fileInput">選擇包含 <code>Neoplasms / NEOPLASMS</code> 與 <code>ICD10_desc</code> 的 Excel 檔：</label>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" />
+        <div id="loadStatus" class="status"></div>
+        <div class="small-note">
+Neoplasms 欄位：Pkey, Parentid, SortID, parentname, NAME,<br>
+  Malignant_Primary, Malignant_Secondary, Malignant_Ca in situ,<br>
+  Benign, Uncertain_Behavior, Unspecified。<br>
+ICD10_desc 欄位：code, engdesc（或 longdes）, Flag。
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-title">
+          <span class="badge">Index</span> Neoplasm 索引（Neoplasms）
+        </div>
+        <input id="neoSearch" type="text" placeholder="搜尋 NAME / parentname ..." disabled>
+        <div id="neoStatus" class="small-note">請先載入 Excel 檔。</div>
+        <div id="neoList"></div>
+      </section>
+    </aside>
+
+    <!-- 右側：六欄代碼 + ICD10_desc -->
+    <div class="content-panel">
+      <section class="card">
+        <div class="section-title">
+          <span class="badge">Step 2</span> 選擇 Neoplasm 代碼（六欄）
+        </div>
+        <div id="neoplasmDetail" class="small-note">
+          左側點選任一索引列，右側會顯示該部位對應的 6 欄代碼（惡性 / 原發、轉移、原位、良性、不確定、未明），<br>
+          同一時間只能選一個代碼。
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-title">
+          <span class="badge">Step 3</span> 對應 ICD10_desc 完整代碼 + 複製
+        </div>
+        <div id="finalCodeArea" class="small-note">
+          尚未選擇 Neoplasm 代碼。
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script>
+  // ===== 全域資料 =====
+  let neoRows = [];          // Neoplasms 原始列
+  let neoNodes = [];         // 平坦節點陣列（含 level）
+  let neoRoots = [];         // roots
+  let nodeByPkey = {};       // Pkey -> node
+
+  let descRows = [];         // ICD10_desc
+  let descMap  = {};         // code -> row
+
+  let currentSelectedBaseCode = ""; // 目前選的 neoplasm 基底代碼
+
+  // DOM
+  const fileInput     = document.getElementById("fileInput");
+  const loadStatus    = document.getElementById("loadStatus");
+  const neoSearch     = document.getElementById("neoSearch");
+  const neoStatus     = document.getElementById("neoStatus");
+  const neoList       = document.getElementById("neoList");
+  const neoDetail     = document.getElementById("neoplasmDetail");
+  const finalCodeArea = document.getElementById("finalCodeArea");
+
+  // ===== 小工具：找工作表名稱（不分大小寫 + 模糊） =====
+  function findSheetNameLike(workbook, target) {
+    const sheetNames = workbook.SheetNames || [];
+    const t = target.toLowerCase();
+
+    // 1. 完全相同
+    let found = sheetNames.find(name => name.toLowerCase() === t);
+    if (found) return found;
+
+    // 2. 含有關鍵字
+    found = sheetNames.find(name => name.toLowerCase().includes(t));
+    return found || null;
+  }
+
+  // ===== reset =====
+  function resetAll() {
+    neoRows = [];
+    neoNodes = [];
+    neoRoots = [];
+    nodeByPkey = {};
+    descRows = [];
+    descMap  = {};
+    currentSelectedBaseCode = "";
+
+    neoSearch.value = "";
+    neoSearch.disabled = true;
+    neoList.innerHTML = "";
+    neoStatus.textContent = "請先載入 Excel 檔。";
+
+    neoDetail.className = "small-note";
+    neoDetail.innerHTML =
+      "左側點選任一索引列，右側會顯示該部位對應的 6 欄代碼（惡性 / 原發、轉移、原位、良性、不確定、未明），<br>" +
+      "同一時間只能選一個代碼。";
+
+    finalCodeArea.className = "small-note";
+    finalCodeArea.textContent = "尚未選擇 Neoplasm 代碼。";
+  }
+
+  // ===== 讀 Excel =====
+  fileInput.addEventListener("change", e => {
+    const file = e.target.files[0];
+    resetAll();
+    if (!file) {
+      loadStatus.className = "status";
+      loadStatus.textContent = "";
+      return;
+    }
+
+    loadStatus.className = "status";
+    loadStatus.textContent = "載入中…";
+
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          throw new Error("Excel 中沒有任何工作表");
+        }
+
+        // ==== Neoplasms ====
+        let neoSheetName = findSheetNameLike(workbook, "neoplasms");
+        if (!neoSheetName) neoSheetName = workbook.SheetNames[0];
+        const neoSheet = workbook.Sheets[neoSheetName];
+        const neoJson  = XLSX.utils.sheet_to_json(neoSheet, { defval: "" });
+
+        neoRows = neoJson.map((r, idx) => ({
+          Pkey:       String(r.Pkey || r.pkey || (idx + 1)),
+          Parentid:   (r.Parentid   || r.parentid   || "").toString(),
+          SortID:     (r.SortID     || r.sortid     || "").toString(),
+          parentname: (r.parentname || "").toString(),
+          NAME:       (r.NAME       || r.Name || "").toString(),
+          MaligP:     (r.Malignant_Primary       || "").toString(),
+          MaligS:     (r.Malignant_Secondary     || "").toString(),
+          MaligCis:   (r["Malignant_Ca in situ"] || r.Malignant_Ca_in_situ || "").toString(),
+          Benign:     (r.Benign || "").toString(),
+          Uncertain:  (r.Uncertain_Behavior || "").toString(),
+          Unspec:     (r.Unspecified || "").toString()
+        })).filter(row => row.NAME !== "");
+
+        if (!neoRows.length) {
+          throw new Error("Neoplasms（或對應工作表）資料列為 0");
+        }
+
+        // ==== ICD10_desc ====
+        let descSheetName = findSheetNameLike(workbook, "icd10_desc");
+        if (descSheetName && workbook.Sheets[descSheetName]) {
+          const dSheet = workbook.Sheets[descSheetName];
+          const dJson  = XLSX.utils.sheet_to_json(dSheet, { defval: "" });
+          descRows = dJson.map(r => {
+            const code = (r.code || r.Code || "").toString().trim();
+            if (!code) return null;
+            const eng = (r.engdesc || r.Engdesc || r.longdes || r.Longdes || "").toString();
+            const rawFlag = (r.Flag || r.flag || r.FLAG || "").toString().trim().toLowerCase();
+            const flag = (rawFlag === "true" || rawFlag === "1" || rawFlag === "y" || rawFlag === "yes");
+            return { code, engdesc: eng, Flag: flag };
+          }).filter(x => x !== null);
+          descMap = {};
+          descRows.forEach(r => { descMap[r.code] = r; });
+        } else {
+          descRows = [];
+          descMap  = {};
+        }
+
+        buildNeoTree();
+        renderNeoList("");
+
+        neoSearch.disabled = false;
+        neoSearch.placeholder = "可輸入多個關鍵字，例如：abdom basal";
+
+        const descInfo = descRows.length
+          ? ("ICD10_desc 工作表：" + (descSheetName || "(未找到)") + "，筆數：" + descRows.length)
+          : "（未找到 ICD10_desc 工作表，下方只會顯示代碼，無說明與 Flag）";
+
+        loadStatus.className = "status success";
+        loadStatus.textContent =
+          "載入成功：\nNeoplasms 工作表：" + neoSheetName + "（列數：" + neoRows.length + "）\n" +
+          descInfo;
+
+        neoStatus.textContent = "已載入 Neoplasms，共 " + neoRows.length + " 列。";
+      } catch (err) {
+        console.error(err);
+        loadStatus.className = "status error";
+        loadStatus.textContent = "載入或解析 Excel 發生錯誤：" + err.message;
+      }
+    };
+    reader.onerror = err => {
+      console.error(err);
+      loadStatus.className = "status error";
+      loadStatus.textContent = "無法讀取檔案。";
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  // ===== 建立樹：用 NAME 前面的 - 當 level =====
+  function buildNeoTree() {
+    neoNodes = [];
+    neoRoots = [];
+    nodeByPkey = {};
+    let stack = [];
+
+    neoRows.forEach(row => {
+      const m = row.NAME.match(/^(-+)/);
+      const level = m ? m[1].length : 0;
+
+      const node = { row, level, children: [] };
+      nodeByPkey[row.Pkey] = node;
+
+      // 找 parent
+      let parent = null;
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].level < level) {
+          parent = stack[i];
+          break;
+        }
+      }
+      if (parent) parent.children.push(node);
+      else neoRoots.push(node);
+
+      stack = stack.filter(n => n.level < level);
+      stack.push(node);
+      neoNodes.push(node);
+    });
+  }
+
+  // ===== 搜尋 + 顯示索引 =====
+  function renderNeoList(filterText) {
+    const tokens = (filterText || "")
+      .toLowerCase()
+      .split(/[ \u3000]+/)
+      .filter(t => t);
+
+    neoList.innerHTML = "";
+
+    function rowMatches(node) {
+      if (!tokens.length) return true;
+      const r = node.row;
+      const nameNoDash = (r.NAME || "").replace(/^[\s\-]+/, "");
+      const hay = (nameNoDash + " " + (r.parentname || "")).toLowerCase();
+      return tokens.every(t => hay.includes(t));
+    }
+
+    neoNodes.forEach(node => {
+      if (!rowMatches(node)) return;
+
+      const r = node.row;
+      const div = document.createElement("div");
+      div.className = "neo-row";
+      div.dataset.pkey = r.Pkey;
+
+      // 縮排：依 level
+      div.style.paddingLeft = (4 + node.level * 14) + "px";
+
+      // 顯示名稱：去掉前面的 "-"
+      const rawName = r.NAME || "";
+      const displayName = rawName.replace(/^[\s\-]+/, "") || rawName || "(無名稱)";
+
+      const mainSpan = document.createElement("span");
+      mainSpan.className = "neo-name-main";
+      mainSpan.textContent = displayName;
+      div.appendChild(mainSpan);
+
+      if (r.parentname) {
+        const parentSpan = document.createElement("span");
+        parentSpan.className = "neo-name-parent";
+        parentSpan.textContent = " (" + r.parentname + ")";
+        div.appendChild(parentSpan);
+      }
+
+      div.addEventListener("click", () => {
+        Array.from(neoList.querySelectorAll(".neo-row"))
+          .forEach(el => el.classList.remove("selected"));
+        div.classList.add("selected");
+        showNeoplasmDetail(node);
+      });
+
+      neoList.appendChild(div);
+    });
+
+    if (!neoList.children.length) {
+      const msg = document.createElement("div");
+      msg.className = "small-note";
+      msg.textContent = "沒有符合搜尋條件的索引列。";
+      neoList.appendChild(msg);
+    }
+  }
+
+  neoSearch.addEventListener("input", () => {
+    renderNeoList(neoSearch.value);
+  });
+
+  // ===== 右側：六欄代碼 + 單選邏輯 =====
+  function showNeoplasmDetail(node) {
+    const r = node.row;
+    const rawName = r.NAME || "";
+    const displayName = rawName.replace(/^[\s\-]+/, "") || rawName || "(無名稱)";
+
+    let html = "";
+    html += "<div class='detail-title'>選擇 Neoplasm 代碼（六欄，限選一個）</div>";
+    html += "<div class='detail-block'><strong>部位：</strong>" + escapeHtml(displayName) + "</div>";
+    if (r.parentname) {
+      html += "<div class='detail-block'><strong>上層：</strong>" + escapeHtml(r.parentname) + "</div>";
+    }
+
+    html += "<table class='code-table'>";
+    html += "<thead><tr>" +
+      "<th>Malignant<br>Primary</th>" +
+      "<th>Malignant<br>Secondary</th>" +
+      "<th>Malignant<br>Ca in situ</th>" +
+      "<th>Benign</th>" +
+      "<th>Uncertain<br>Behavior</th>" +
+      "<th>Unspecified</th>" +
+      "</tr></thead>";
+    html += "<tbody><tr>";
+
+    function cellHtml(codeStr, behaviorKey) {
+      const c = normalizeCode(codeStr);
+      if (!c || c === "-" || c === "--") return "<td></td>";
+      return "<td><button type='button' class='code-btn' " +
+             "data-code='" + escapeHtml(c) + "' " +
+             "data-behavior='" + behaviorKey + "'>" +
+             escapeHtml(c) +
+             "</button></td>";
+    }
+
+    html += cellHtml(r.MaligP,   "Malignant_Primary");
+    html += cellHtml(r.MaligS,   "Malignant_Secondary");
+    html += cellHtml(r.MaligCis, "Malignant_Ca_in_situ");
+    html += cellHtml(r.Benign,   "Benign");
+    html += cellHtml(r.Uncertain,"Uncertain_Behavior");
+    html += cellHtml(r.Unspec,   "Unspecified");
+
+    html += "</tr></tbody></table>";
+
+    neoDetail.className = "";
+    neoDetail.innerHTML = html;
+
+    const buttons = neoDetail.querySelectorAll(".code-btn");
+    currentSelectedBaseCode = "";
+    finalCodeArea.className = "small-note";
+    finalCodeArea.textContent = "尚未選擇 Neoplasm 代碼。";
+
+    buttons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        buttons.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        const baseCode = btn.dataset.code || "";
+        currentSelectedBaseCode = baseCode;
+        showFinalFromDesc(baseCode);
+      });
+    });
+  }
+
+  function normalizeCode(code) {
+    return (code || "").toString().trim();
+  }
+
+  // ===== 依 Neoplasm 代碼對應 ICD10_desc（Flag TRUE → 直接用；FALSE → 下拉） =====
+  function showFinalFromDesc(baseCodeRaw) {
+    const baseCode = normalizeCode(baseCodeRaw);
+    if (!baseCode) {
+      finalCodeArea.className = "small-note";
+      finalCodeArea.textContent = "尚未選擇 Neoplasm 代碼。";
+      return;
+    }
+
+    const rootPrefix = baseCode.replace(/-$/, ""); // C79.8- → C79.8
+    finalCodeArea.className = "";
+    let html = "";
+
+    html += "<div class='detail-title'>ICD10_desc 完整代碼與說明</div>";
+    html += "<div class='detail-block'><strong>選擇 Neoplasm 代碼：</strong><code>" +
+            escapeHtml(baseCode) + "</code></div>";
+
+    if (!descRows.length) {
+      // 沒有載入 ICD10_desc，就只顯示代碼本身
+      html += "<div class='small-note'>未載入 ICD10_desc，只能顯示代碼本身。</div>";
+      html += "<div class='detail-block'><strong>最終代碼：</strong><code>" +
+              escapeHtml(rootPrefix || baseCode) + "</code></div>";
+      html += "<button id='copyBtn' type='button' class='copy-btn'>複製代碼</button>";
+      finalCodeArea.innerHTML = html;
+
+      const copyBtn = document.getElementById("copyBtn");
+      if (copyBtn) {
+        copyBtn.addEventListener("click", () =>
+          copyToClipboard(rootPrefix || baseCode, finalCodeArea)
+        );
+      }
+      return;
+    }
+
+    // exact record
+    const baseRec = descMap[baseCode] || descMap[rootPrefix] || null;
+
+    let options = [];
+    if (baseRec && baseRec.Flag) {
+      options = [baseRec];
+    } else {
+      const prefix = rootPrefix || baseCode;
+      options = descRows.filter(r =>
+        r.Flag && normalizeCode(r.code).startsWith(prefix)
+      );
+      if (!options.length && baseRec) {
+        options = [baseRec];
+      }
+    }
+
+    if (!options.length) {
+      const fallback = rootPrefix || baseCode;
+      html += "<div class='small-note'>ICD10_desc 中找不到對應 Flag=TRUE 的延伸碼，使用原始代碼。</div>";
+      html += "<div class='detail-block'><strong>最終代碼：</strong><code>" +
+              escapeHtml(fallback) + "</code></div>";
+      html += "<button id='copyBtn' type='button' class='copy-btn'>複製代碼</button>";
+      finalCodeArea.innerHTML = html;
+
+      const copyBtn = document.getElementById("copyBtn");
+      if (copyBtn) {
+        copyBtn.addEventListener("click", () =>
+          copyToClipboard(fallback, finalCodeArea)
+        );
+      }
+      return;
+    }
+
+    // 有 1~多筆 options：做下拉式選單
+    html += "<div class='detail-block'><strong>請選擇完整代碼（Flag = TRUE）：</strong><br>";
+    html += "<select id='icdSelect' class='icd-select'>";
+
+    options.forEach((o, idx) => {
+      const code = normalizeCode(o.code);
+      const firstLine = (o.engdesc || "").split(/\r?\n/)[0];
+      html += "<option value='" + escapeHtml(code) + "'" +
+              (idx === 0 ? " selected" : "") + ">";
+      html += escapeHtml(code + " — " + firstLine);
+      html += "</option>";
+    });
+
+    html += "</select>";
+    html += "<button id='copyBtn' type='button' class='copy-btn'>複製代碼</button>";
+    html += "</div>";
+
+    html += "<div id='icdDescBox' class='longdes-box'></div>";
+
+    finalCodeArea.innerHTML = html;
+
+    const icdSelect = document.getElementById("icdSelect");
+    const copyBtn   = document.getElementById("copyBtn");
+    const descBox   = document.getElementById("icdDescBox");
+
+    function updateDesc() {
+      const code = icdSelect.value;
+      const rec  = descMap[code];
+      if (!rec) {
+        descBox.textContent = "(找不到這個代碼的說明)";
+        return;
+      }
+      descBox.textContent = rec.engdesc || "(engdesc 空白)";
+    }
+
+    updateDesc();
+
+    icdSelect.addEventListener("change", () => {
+      updateDesc();
+    });
+
+    if (copyBtn) {
+      copyBtn.addEventListener("click", () => {
+        const code = icdSelect.value;
+        copyToClipboard(code, finalCodeArea);
+      });
+    }
+  }
+
+  // ===== 複製工具 =====
+  function copyToClipboard(text, statusElem) {
+    const msg = "已複製代碼：" + text;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        statusElem.className = "status success";
+        statusElem.textContent = msg;
+      }).catch(() => fallbackCopy(text, statusElem));
+    } else {
+      fallbackCopy(text, statusElem);
+    }
+  }
+
+  function fallbackCopy(text, statusElem) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      statusElem.className = "status success";
+      statusElem.textContent = "已複製代碼：" + text;
+    } catch (e) {
+      statusElem.className = "status error";
+      statusElem.textContent = "無法自動複製，請手動選取代碼。";
+    }
+    document.body.removeChild(ta);
+  }
+
+  // ===== HTML escape =====
+  function escapeHtml(str) {
+    return String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+</script>
+</body>
+</html>
