@@ -970,7 +970,117 @@
     tryUpdateResult();
   }
 
-  // ===== 事件綁定 =====
+  // ===== 從整合首頁共用 Excel 嘗試初始化 =====
+
+  function resetStateForNewData() {
+    pcsRows = [];
+    idxRows = [];
+    idxGrouped = {};
+
+    Object.keys(selections).forEach(k => selections[k] = "");
+
+    sectionSelect.disabled = true;
+    bodysystemSelect.disabled = true;
+    operationSelect.disabled = true;
+
+    sectionSelect.innerHTML = "<option value=''>請先載入 Excel</option>";
+    bodysystemSelect.innerHTML = "<option value=''>請先選 Section</option>";
+    operationSelect.innerHTML = "<option value=''>請先選 Body System</option>";
+
+    detailsSection.classList.add("hidden");
+    resultSection.classList.add("hidden");
+
+    indexList.innerHTML = "";
+    indexSearch.value = "";
+    indexSearch.disabled = true;
+    indexStatus.textContent = "請先載入 Excel 檔。";
+
+    selectionSummary.textContent = "尚未完成所有欄位選擇。";
+    currentPath.textContent = "";
+    resultInfo.textContent = "";
+    resultInfo.className = "status";
+    resultTableBody.innerHTML = "";
+
+    [bodypartOptions, approachOptions, deviceOptions, qualiferOptions].forEach(c => {
+      c.innerHTML = "";
+    });
+  }
+
+  function tryInitFromParentShared() {
+    try {
+      if (!window.parent || window.parent === window) return false;
+      const shared = window.parent.ICD_SHARED_DATA;
+      if (!shared || !shared.sheets) return false;
+
+      // 在 index.html 裡，請把這兩個 key 填好：
+      // ICD_SHARED_DATA.sheets.pcsTable  = PCS_Table 的列陣列
+      // ICD_SHARED_DATA.sheets.pcs_idx   = PCS_idx 的列陣列
+      const rawPcs =
+        shared.sheets.pcsTable ||
+        shared.sheets.PCS_Table ||
+        shared.sheets.pcs_table ||
+        [];
+      const rawIdx =
+        shared.sheets.pcs_idx ||
+        shared.sheets.PCS_idx ||
+        shared.sheets.PCS_IDX ||
+        [];
+
+      if (!rawPcs.length) {
+        if (loadStatus) {
+          loadStatus.className = "status";
+          loadStatus.textContent = "偵測到整合首頁，但尚未載入 PCS_Table。";
+        }
+        return false;
+      }
+
+      resetStateForNewData();
+
+      pcsRows = rawPcs;
+      idxRows = rawIdx || [];
+
+      // Section 下拉
+      const sections = getUniqueValues(pcsRows, "section");
+      populateSelect(sectionSelect, sections, "請選擇 Section");
+      sectionSelect.disabled = false;
+      bodysystemSelect.disabled = true;
+      operationSelect.disabled = true;
+
+      // 索引結構
+      buildIndexStructure();
+
+      if (loadStatus) {
+        const idxInfo = idxRows.length
+          ? "PCS_idx 筆數：" + idxRows.length
+          : "（未提供 PCS_idx，左側索引功能受限）";
+        loadStatus.className = "status success";
+        loadStatus.textContent =
+          "從整合首頁取得資料：PCS_Table " + pcsRows.length + " 列。\n" + idxInfo;
+      }
+
+      if (fileInput) {
+        fileInput.disabled = true;
+        fileInput.style.opacity = 0.5;
+        fileInput.title = "已由整合首頁載入 Excel，共用同一份資料";
+      }
+
+      return true;
+    } catch (e) {
+      console.error("tryInitFromParentShared error:", e);
+      return false;
+    }
+  }
+
+  window.addEventListener("load", () => {
+    tryInitFromParentShared();
+  });
+
+  window.addEventListener("message", (e) => {
+    if (!e.data || e.data.type !== "ICD_EXCEL_LOADED") return;
+    tryInitFromParentShared();
+  });
+
+  // ===== 事件綁定（單獨使用本頁：自己匯入 Excel） =====
 
   indexSearch.addEventListener("input", () => {
     renderIndexTree(indexSearch.value);
@@ -978,24 +1088,7 @@
 
   fileInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
-    pcsRows = [];
-    idxRows = [];
-    idxGrouped = {};
-
-    sectionSelect.disabled = true;
-    bodysystemSelect.disabled = true;
-    operationSelect.disabled = true;
-    sectionSelect.innerHTML = "<option value=''>請先載入 Excel</option>";
-    bodysystemSelect.innerHTML = "<option value=''>請先選 Section</option>";
-    operationSelect.innerHTML = "<option value=''>請先選 Body System</option>";
-    detailsSection.classList.add("hidden");
-    resultSection.classList.add("hidden");
-    indexList.innerHTML = "";
-    indexSearch.value = "";
-    indexSearch.disabled = true;
-    indexStatus.textContent = "請先載入 Excel 檔。";
-
-    Object.keys(selections).forEach(k => selections[k] = "");
+    resetStateForNewData();
 
     if (!file) {
       loadStatus.className = "status";
