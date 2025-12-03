@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>ICD 樹狀查詢 + ICD10_desc 說明</title>
 
+<!-- 給「單獨開啟本頁」時用的 Excel 讀取；如果是從 index 共用資料，這段也不會出錯 -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
@@ -150,6 +151,7 @@
 
 <header>
     <label>Excel 檔：
+        <!-- 若是從 index.html 進來、會用共用資料，這個 input 會被自動 disable -->
         <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
     </label>
     <input type="text" id="searchBox" placeholder="多關鍵字用空白分開（名稱或代碼，模糊比對，路徑 AND）">
@@ -158,7 +160,7 @@
 </header>
 
 <main>
-    <div id="treeContainer">請先選擇 Excel 檔案（ICD10_idx + ICD10_desc）</div>
+    <div id="treeContainer">請先選擇 Excel 檔案（ICD10_idx + ICD10_desc），或在整合首頁匯入。</div>
 
     <div id="detailPanel">
         <label for="codeBox">代碼：</label>
@@ -192,11 +194,14 @@ let nodeMap = {};
 let rootNodes = [];
 let lastSelectedLabel = null;
 
-/* ===== 讀取 Excel ===== */
-// ==== 嘗試從首頁共享的 Excel 資料初始化（被 index.html 用 iframe 開啟時） ====
+/* =========================
+   1. 從首頁共用 Excel 資料
+   ========================= */
+
+// 嘗試從 parent (index.html) 的 ICD_SHARED_DATA 抓資料
 function tryInitFromParentShared() {
     try {
-        // 如果沒有 parent，或 parent 就是自己，表示不是從 index.html 進來
+        // 如果沒有 parent，或 parent 就是自己：代表是「獨立開啟本頁」，直接跳過
         if (!window.parent || window.parent === window) return false;
 
         const shared = window.parent.ICD_SHARED_DATA;
@@ -205,29 +210,37 @@ function tryInitFromParentShared() {
         const icdIdx  = shared.sheets.icdIdx  || [];
         const icdDesc = shared.sheets.icdDesc || [];
 
-        // 如果首頁還沒載入成功，就不要動
-        if (!icdIdx.length) return false;
+        const st = document.getElementById('status');
+
+        // 整合頁已有物件，但尚未真的載入資料
+        if (!icdIdx.length) {
+            if (st) {
+                st.textContent = "偵測到整合首頁，但尚未匯入 Excel，請先在首頁匯入。";
+                st.style.color = "#b91c1c";
+            }
+            return false;
+        }
 
         // 把資料接過來，當成原本自己讀到的 Excel
         icdRows  = icdIdx;
         descRows = icdDesc;
 
-        buildTreeData();   // 你原本就有的函式
-        renderTree();      // 你原本就有的函式
+        buildTreeData();
+        renderTree();
 
-        const st = document.getElementById('status');
         if (st) {
             st.textContent =
                 "使用首頁共用資料：ICD10_idx " + icdRows.length +
                 " 筆 / ICD10_desc " + descRows.length + " 筆。";
+            st.style.color = "#065f46";
         }
 
-        // 如果你希望這頁不要再讓人上傳檔案，可以把 input 關掉
+        // 不再允許在子頁自己另外匯入，避免混淆
         const fileInput = document.getElementById('fileInput');
         if (fileInput) {
             fileInput.disabled = true;
             fileInput.style.opacity = 0.5;
-            fileInput.title = "已由首頁載入 Excel，共用同一份資料";
+            fileInput.title = "已由整合首頁載入 Excel，共用同一份資料";
         }
 
         return true;
@@ -237,7 +250,7 @@ function tryInitFromParentShared() {
     }
 }
 
-// 頁面載入後，先試著從 parent 拿資料
+// 頁面載入後先試著用共用資料
 window.addEventListener("load", function () {
     tryInitFromParentShared();
 });
@@ -248,9 +261,19 @@ window.addEventListener("message", function (e) {
     tryInitFromParentShared();
 });
 
+/* =========================
+   2. 本頁自己匯入 Excel（獨立使用時）
+   ========================= */
+
 document.getElementById('fileInput').addEventListener('change', function (e) {
     const file = e.target.files[0];
     if (!file) return;
+
+    const statusSpan = document.getElementById('status');
+    if (statusSpan) {
+        statusSpan.textContent = "讀取中…";
+        statusSpan.style.color = "#4b5563";
+    }
 
     const reader = new FileReader();
     reader.onload = function (evt) {
@@ -290,9 +313,12 @@ document.getElementById('fileInput').addEventListener('change', function (e) {
 
         buildTreeData();
         renderTree();
-        document.getElementById('status').textContent =
-            `載入索引 ${icdRows.length} 筆 (${idxSheetName})，ICD10_desc 筆數：${descRows.length}` +
-            (descSheetName ? `（工作表：${descSheetName}）` : "（未找到 ICD10_desc 工作表）");
+        if (statusSpan) {
+            statusSpan.textContent =
+                `載入索引 ${icdRows.length} 筆 (${idxSheetName})，ICD10_desc 筆數：${descRows.length}` +
+                (descSheetName ? `（工作表：${descSheetName}）` : "（未找到 ICD10_desc 工作表）");
+            statusSpan.style.color = "#4b5563";
+        }
     };
     reader.readAsBinaryString(file);
 });
@@ -391,7 +417,7 @@ function renderTree(filterText = "") {
     container.innerHTML = "";
 
     if (!rootNodes.length) {
-        container.textContent = "沒有資料，請先載入 Excel。";
+        container.textContent = "沒有資料，請先載入 Excel（或在整合首頁匯入）。";
         return;
     }
 
@@ -733,7 +759,7 @@ function doSearch() {
         status.style.color = "#666";
     } else {
         status.textContent =
-            "只顯示同一路徑上累積符合所有模糊關鍵字的分支（其餘隱藏）";
+            "只顯示同一路徑上累積符合所有模糊關鍵字的分支（其餘隱藏）。";
         status.style.color = "#666";
     }
 }
