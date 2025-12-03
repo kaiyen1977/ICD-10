@@ -291,7 +291,124 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
   const treeContainer = document.getElementById("treeContainer");
   const detailArea = document.getElementById("detailArea");
 
-  // ===== 讀取 Excel =====
+  /* =========================
+     0. 從整合首頁共用 Excel 資料
+     ========================= */
+
+  function mapExternalRowsFromRaw(rawRows) {
+    return (rawRows || []).map((r, idx) => ({
+      Serial: String(
+        r.Serial !== undefined && r.Serial !== "" ? r.Serial :
+        (idx + 1)
+      ),
+      Name:   (r.Name   || "").toString(),
+      ParentID: (r.ParentID === "" || r.ParentID === null || r.ParentID === undefined)
+        ? null
+        : String(r.ParentID),
+      Level:   (r.Level   || "").toString(),
+      ICDCode: (r.ICDCode || "").toString().trim(),
+      Memo:    (r.Memo    || "").toString()
+    })).filter(r => r.Name !== "" || r.Memo !== "" || r.ICDCode !== "");
+  }
+
+  function mapIcdDescFromRaw(rawRows) {
+    return (rawRows || []).map(r => {
+      const code = (r.code || r.Code || "").toString().trim();
+      if (!code) return null;
+      const longdes = (r.longdes || r.Longdes || r.engdesc || r.Engdesc || r.ENGDESC || "").toString();
+      const rawFlag = (r.Flag || r.flag || r.FLAG || "").toString().trim().toLowerCase();
+      let flag = (rawFlag === "true" || rawFlag === "1" || rawFlag === "y" || rawFlag === "yes");
+      if (typeof r.Flag === "boolean") flag = r.Flag;
+      return { code, longdes, Flag: flag };
+    }).filter(r => r !== null);
+  }
+
+  function tryInitFromParentShared() {
+    try {
+      if (!window.parent || window.parent === window) return false;
+
+      const shared = window.parent.ICD_SHARED_DATA;
+      if (!shared || !shared.sheets) return false;
+
+      // 盡量容錯找 external index
+      const rawExt =
+        shared.sheets.externalIdx ||
+        shared.sheets.EXTERNAL_idx ||
+        shared.sheets.external ||
+        shared.sheets.external_idx ||
+        [];
+
+      const rawDesc =
+        shared.sheets.icdDesc ||
+        shared.sheets.ICD10_desc ||
+        shared.sheets.icd10_desc ||
+        [];
+
+      if (!rawExt.length) {
+        if (loadStatus) {
+          loadStatus.className = "status";
+          loadStatus.textContent = "偵測到整合首頁，但尚未在首頁載入 EXTERNAL_idx。";
+        }
+        return false;
+      }
+
+      externalRows = mapExternalRowsFromRaw(rawExt);
+      icdDescRows = mapIcdDescFromRaw(rawDesc);
+
+      buildTreeStructure();
+      renderTree("");
+
+      if (idxSearch) {
+        idxSearch.disabled = false;
+        idxSearch.placeholder = "搜尋多個關鍵字，例如：fall motor vehicle";
+      }
+
+      if (idxStatus) {
+        idxStatus.textContent = "使用整合首頁共用資料：EXTERNAL_idx " + externalRows.length + " 列。";
+      }
+
+      if (loadStatus) {
+        const descInfo = icdDescRows.length
+          ? ("ICD10_desc 筆數：" + icdDescRows.length)
+          : "（未找到 ICD10_desc，無法顯示延伸碼下拉）";
+        loadStatus.className = "status success";
+        loadStatus.textContent =
+          "從整合首頁取得資料：EXTERNAL_idx " + externalRows.length +
+          " 列。\n" + descInfo;
+      }
+
+      // 鎖住本頁檔案上傳
+      if (fileInput) {
+        fileInput.disabled = true;
+        fileInput.style.opacity = 0.5;
+        fileInput.title = "已由整合首頁載入 Excel，共用同一份資料";
+      }
+
+      // 初始右側提示
+      detailArea.className = "small-note";
+      detailArea.innerHTML =
+        "左側點選任一索引節點，若該列有 ICDCode，將顯示基底代碼與對應的 ICD10_desc 延伸碼。";
+
+      return true;
+    } catch (e) {
+      console.error("tryInitFromParentShared error:", e);
+      return false;
+    }
+  }
+
+  window.addEventListener("load", function () {
+    tryInitFromParentShared();
+  });
+
+  window.addEventListener("message", function (e) {
+    if (!e.data || e.data.type !== "ICD_EXCEL_LOADED") return;
+    tryInitFromParentShared();
+  });
+
+  /* =========================
+     1. 單獨使用本頁：自己匯入 Excel
+     ========================= */
+
   fileInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
     externalRows = [];
@@ -302,7 +419,8 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
     idxSearch.value = "";
     idxSearch.disabled = true;
     idxStatus.textContent = "請先載入 Excel 檔。";
-    detailArea.innerHTML = "左側點選任一索引節點，若該列有 ICDCode，將顯示基底代碼與對應的 ICD10_desc 延伸碼。";
+    detailArea.innerHTML =
+      "左側點選任一索引節點，若該列有 ICDCode，將顯示基底代碼與對應的 ICD10_desc 延伸碼。";
     detailArea.className = "small-note";
 
     if (!file) {
@@ -332,19 +450,7 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
         }
         const extSheet = workbook.Sheets[extSheetName];
         const extJson = XLSX.utils.sheet_to_json(extSheet, { defval: "" });
-        externalRows = extJson.map((r, idx) => ({
-          Serial: String(
-            r.Serial !== undefined && r.Serial !== "" ? r.Serial :
-            (idx + 1)
-          ),
-          Name:   (r.Name   || "").toString(),
-          ParentID: (r.ParentID === "" || r.ParentID === null || r.ParentID === undefined)
-            ? null
-            : String(r.ParentID),
-          Level:   (r.Level   || "").toString(),
-          ICDCode: (r.ICDCode || "").toString().trim(),
-          Memo:    (r.Memo    || "").toString()
-        })).filter(r => r.Name !== "" || r.Memo !== "" || r.ICDCode !== "");
+        externalRows = mapExternalRowsFromRaw(extJson);
 
         if (!externalRows.length) {
           throw new Error("EXTERNAL_idx（或第一張工作表）資料列為 0");
@@ -355,14 +461,7 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
         if (workbook.Sheets[descSheetName]) {
           const descSheet = workbook.Sheets[descSheetName];
           const descJson = XLSX.utils.sheet_to_json(descSheet, { defval: "" });
-          icdDescRows = descJson.map(r => {
-            const code = (r.code || r.Code || "").toString().trim();
-            if (!code) return null;
-            const longdes = (r.longdes || r.Longdes || r.engdesc || r.Engdesc || "").toString();
-            const rawFlag = (r.Flag || r.flag || r.FLAG || "").toString().trim().toLowerCase();
-            const flag = (rawFlag === "true" || rawFlag === "1" || rawFlag === "y" || rawFlag === "yes");
-            return { code, longdes, Flag: flag };
-          }).filter(r => r !== null);
+          icdDescRows = mapIcdDescFromRaw(descJson);
         } else {
           icdDescRows = [];
         }
@@ -451,11 +550,9 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
   }
 
   // ===== 搜尋：多關鍵字 AND，祖先 + 子孫一起湊關鍵字 =====
-  // tokens: 小寫關鍵字陣列，例如 ["acci","moto"]
   function nodeSubtreeMatches(node, tokens) {
     if (!tokens || tokens.length === 0) return true;  // 沒輸入就全部顯示
     const text = node.subtreeTextLower || "";
-    // 在整個 subtree 裡，同時包含所有 token
     return tokens.every(t => text.includes(t));
   }
 
@@ -463,7 +560,7 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
     const tokens = (filterText || "")
       .toLowerCase()
       .split(/[ ,]+/)
-      .filter(t => t);  // 去掉空白 token
+      .filter(t => t);
 
     treeContainer.innerHTML = "";
 
@@ -474,7 +571,7 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
       const subtreeMatch = nodeSubtreeMatches(node, tokens);
       const keepThisBranch = ancestorKept || subtreeMatch;
 
-      if (!keepThisBranch) return;   // 整個分支都不要
+      if (!keepThisBranch) return;
 
       const li = document.createElement("li");
 
@@ -487,12 +584,10 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
       }
 
       const r = node.row;
-      // 顯示用：把 Name 前面的 "-" + 空白 去掉
       const rawName = r.Name || "";
-	// 把開頭所有空白 + 減號通通拔掉，例如 "   - - animal ..." → "animal ..."
-	let displayName = rawName.replace(/^[\s\-]+/, "");
-	if (!displayName) displayName = rawName || "(無名稱)";
-
+      // 把開頭所有空白 + 減號通通拔掉，例如 "   - - animal ..." → "animal ..."
+      let displayName = rawName.replace(/^[\s\-]+/, "");
+      if (!displayName) displayName = rawName || "(無名稱)";
 
       const mainSpan = document.createElement("span");
       mainSpan.className = "tree-node-text-main";
@@ -540,7 +635,6 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
       const childrenUl = document.createElement("ul");
       childrenUl.className = "tree-children collapsed";
       node.children.forEach(child => {
-        // 一旦某個祖先被保留，下層全部保留（不再對每個子節點重新套 token）
         appendNode(child, childrenUl, keepThisBranch);
       });
       if (childrenUl.children.length) {
@@ -574,7 +668,6 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
     if (!prefix) return [];
     const simplePrefix = prefix.replace(/\s+/g, "");
 
-    // 找「前綴符合」且 Flag=TRUE，且長度比 base 長（有 encounter / sequela） 
     return icdDescRows.filter(r => {
       if (!r.Flag) return false;
       const c = (r.code || "").replace(/\s+/g, "");
@@ -616,13 +709,12 @@ ICD10_desc 欄位：code, longdes / engdesc, Flag（TRUE/FALSE）
 
   function showDetail(row) {
     const baseCode = (row.ICDCode || "").trim();
-	const hasCode = !!baseCode;
+    const hasCode = !!baseCode;
 
-// 詳細資訊這邊也把開頭的 - 拿掉，跟左邊列表一致
-	const nameRaw = row.Name || "";
-	const name = nameRaw.replace(/^[\s\-]+/, "");
-	const memo = row.Memo || "";
-
+    // 詳細資訊也把開頭的 - 去掉，跟左邊一致
+    const nameRaw = row.Name || "";
+    const name = nameRaw.replace(/^[\s\-]+/, "");
+    const memo = row.Memo || "";
 
     if (!hasCode) {
       detailArea.className = "small-note";
