@@ -1,318 +1,279 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <title>ICD-10 查詢工具整合</title>
+  <meta charset="UTF-8" />
+  <title>ICD-10 工具總入口</title>
 
-  <!-- 讀 Excel 用 -->
+  <!-- XLSX：給 index 讀 Excel 用 -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <style>
     body {
       margin: 0;
-      font-family: "Segoe UI", system-ui, sans-serif;
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f5f7;
+      color: #111827;
       height: 100vh;
       display: flex;
       flex-direction: column;
     }
     header {
-      padding: 8px 16px;
-      background: #1f2933;
-      color: #fff;
-      font-size: 14px;
+      padding: 12px 20px;
+      background: #111827;
+      color: #f9fafb;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 8px;
-      box-sizing: border-box;
+      gap: 10px;
     }
-    header .title {
+    header h1 {
+      margin: 0;
+      font-size: 1.2rem;
       font-weight: 600;
-      font-size: 16px;
     }
-    header .desc {
-      font-size: 12px;
-      opacity: 0.8;
+    header .sub {
+      font-size: 0.85rem;
+      opacity: 0.85;
     }
-    header .right {
-      margin-left: auto;
+
+    #top-bar {
+      padding: 10px 20px;
       display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
       align-items: center;
-      gap: 6px;
-      font-size: 12px;
+      background: #e5e7eb;
+      border-bottom: 1px solid #d1d5db;
     }
+    #excelInput {
+      padding: 4px;
+      font-size: 0.9rem;
+    }
+    #excelStatus {
+      font-size: 0.85rem;
+      color: #4b5563;
+      white-space: pre-line;
+    }
+    #excelStatus.error {
+      color: #b91c1c;
+    }
+    #excelStatus.success {
+      color: #065f46;
+    }
+
+    #tool-bar {
+      padding: 8px 20px;
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+    .tool-btn {
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      padding: 4px 10px;
+      background: white;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .tool-btn.active {
+      background: #2563eb;
+      border-color: #1d4ed8;
+      color: white;
+    }
+    .tool-btn:hover:not(.active) {
+      background: #e5e7eb;
+    }
+
     main {
       flex: 1;
       display: flex;
-      min-height: 0;
+      flex-direction: column;
     }
-    nav {
-      width: 230px;
-      border-right: 1px solid #ddd;
-      background: #f9fafb;
-      padding: 12px 8px;
-      box-sizing: border-box;
-    }
-    .nav-title {
-      font-weight: 600;
-      margin-bottom: 8px;
-      font-size: 14px;
-    }
-    .nav-btn {
-      width: 100%;
-      text-align: left;
-      padding: 6px 10px;
-      margin-bottom: 4px;
-      font-size: 13px;
-      border-radius: 6px;
-      border: 1px solid transparent;
-      background: transparent;
-      cursor: pointer;
-    }
-    .nav-btn:hover {
-      background: #e5f0ff;
-    }
-    .nav-btn.active {
-      background: #2563eb;
-      color: #fff;
-      border-color: #1d4ed8;
+    #frameWrapper {
+      flex: 1;
+      border-top: 1px solid #e5e7eb;
     }
     #toolFrame {
-      flex: 1;
-      border: none;
       width: 100%;
       height: 100%;
+      border: none;
+      background: white;
     }
-    #statusBar {
-      font-size: 12px;
-      color: #6b7280;
-      padding: 4px 16px 6px;
-      border-top: 1px solid #e5e7eb;
-      background: #f9fafb;
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      box-sizing: border-box;
-    }
-    #statusBar span {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 50%;
-    }
-    #excelStatus {
-      color: #b91c1c; /* 預設紅色：尚未載入或失敗 */
-    }
+
     #pageStatus {
-      color: #374151;
-    }
-    #masterExcel {
-      font-size: 11px;
+      font-size: 0.8rem;
+      padding: 4px 20px;
+      color: #6b7280;
+      background: #f9fafb;
+      border-top: 1px solid #e5e7eb;
     }
   </style>
-
-  <script>
-    // ===== 全域共用資料，五個工具頁都從這裡拿 =====
-    window.ICD_SHARED_DATA = {
-      workbook: null,
-      fileName: "",
-      sheets: {
-        icdIdx:      [], // ICD10_idx
-        icdDesc:     [], // ICD10_desc
-        drugIdx:     [], // Drug_idx
-        externalIdx: [], // EXTERNAL_idx
-        neoplasms:   [], // NEOPLASMS
-        pcsTable:    [], // PCS_Table
-        pcsIdx:      []  // PCS_idx
-      }
-    };
-
-    function setExcelStatus(msg, isError) {
-      const el = document.getElementById("excelStatus");
-      el.textContent = msg || "";
-      if (isError === undefined) return;
-      el.style.color = isError ? "#b91c1c" : "#059669";
-    }
-
-    function setPageStatus(msg) {
-      const el = document.getElementById("pageStatus");
-      el.textContent = msg || "";
-    }
-
-    // 解析 workbook，填進 ICD_SHARED_DATA
-    function parseWorkbook(arrayBuffer, fileName) {
-      const wb = XLSX.read(arrayBuffer, { type: "array" });
-      window.ICD_SHARED_DATA.workbook = wb;
-      window.ICD_SHARED_DATA.fileName = fileName || "";
-
-      function sheetJson(possibleNames, fallbackIndex) {
-        let sheet = null;
-        let sheetName = "";
-        for (const name of possibleNames) {
-          if (wb.Sheets[name]) {
-            sheet = wb.Sheets[name];
-            sheetName = name;
-            break;
-          }
-        }
-        if (!sheet && typeof fallbackIndex === "number" &&
-            wb.SheetNames[fallbackIndex]) {
-          sheetName = wb.SheetNames[fallbackIndex];
-          sheet = wb.Sheets[sheetName];
-        }
-        if (!sheet) return { json: [], name: "" };
-        return {
-          json: XLSX.utils.sheet_to_json(sheet, { defval: "" }),
-          name: sheetName
-        };
-      }
-
-      const icdIdx  = sheetJson(["ICD10_idx", "ICD-10_idx", "icd10_idx"], 0);
-      const icdDesc = sheetJson(["ICD10_desc","ICD-10_desc","icd10_desc"], 1);
-      const drugIdx = sheetJson(["Drug_idx","DRUG_idx","drug_idx"], -1);
-      const extIdx  = sheetJson(["EXTERNAL_idx","External_idx","external_idx"], -1);
-      const neo     = sheetJson(["NEOPLASMS","Neoplasms","neoplasms"], -1);
-      const pcsT    = sheetJson(["PCS_Table","PCS_Tabl","pcs_table"], -1);
-      const pcsI    = sheetJson(["PCS_idx","PCS_Idx","pcs_idx"], -1);
-
-      window.ICD_SHARED_DATA.sheets.icdIdx      = icdIdx.json;
-      window.ICD_SHARED_DATA.sheets.icdDesc     = icdDesc.json;
-      window.ICD_SHARED_DATA.sheets.drugIdx     = drugIdx.json;
-      window.ICD_SHARED_DATA.sheets.externalIdx = extIdx.json;
-      window.ICD_SHARED_DATA.sheets.neoplasms   = neo.json;
-      window.ICD_SHARED_DATA.sheets.pcsTable    = pcsT.json;
-      window.ICD_SHARED_DATA.sheets.pcsIdx      = pcsI.json;
-
-      const msg =
-        "Excel 載入成功：" + (fileName || "(未命名)") +
-        " ｜ ICD_idx:"      + icdIdx.json.length +
-        " / desc:"          + icdDesc.json.length +
-        " / Drug:"          + drugIdx.json.length +
-        " / External:"      + extIdx.json.length +
-        " / Neo:"           + neo.json.length +
-        " / PCS_Table:"     + pcsT.json.length +
-        " / PCS_idx:"       + pcsI.json.length;
-
-      setExcelStatus(msg, false);
-
-      // 通知目前 iframe：資料已更新（子頁如果有需要可以監聽）
-      const frame = document.getElementById("toolFrame");
-      if (frame && frame.contentWindow) {
-        frame.contentWindow.postMessage({ type: "ICD_EXCEL_LOADED" }, "*");
-      }
-    }
-
-    // 嘗試自動載入同資料夾的 icd-10.xlsx（需要透過 http 伺服器開啟）
-    async function tryAutoLoadExcel() {
-      try {
-        const resp = await fetch("icd-10.xlsx");
-        if (!resp.ok) throw new Error("HTTP 狀態 " + resp.status);
-        const buf = await resp.arrayBuffer();
-        parseWorkbook(buf, "icd-10.xlsx");
-
-        const uploadDiv = document.getElementById("uploadArea");
-        if (uploadDiv) uploadDiv.style.display = "none";
-      } catch (e) {
-        console.warn("自動載入 icd-10.xlsx 失敗：", e);
-        setExcelStatus("自動載入 icd-10.xlsx 失敗，請手動選擇 Excel 檔。", true);
-        const uploadDiv = document.getElementById("uploadArea");
-        if (uploadDiv) uploadDiv.style.display = "inline-flex";
-      }
-    }
-
-    window.addEventListener("DOMContentLoaded", () => {
-      const fileInput = document.getElementById("masterExcel");
-      const uploadArea = document.getElementById("uploadArea");
-
-      // 手動匯入
-      fileInput.addEventListener("change", (e) => {
-        const f = e.target.files[0];
-        if (!f) {
-          setExcelStatus("尚未選擇 Excel 檔案", true);
-          return;
-        }
-        setExcelStatus("讀取中：" + f.name + " …", false);
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-          try {
-            parseWorkbook(evt.target.result, f.name);
-          } catch (err) {
-            console.error(err);
-            setExcelStatus("解析 Excel 失敗：" + err.message, true);
-          }
-        };
-        reader.onerror = function(err) {
-          console.error(err);
-          setExcelStatus("讀取檔案失敗", true);
-        };
-        reader.readAsArrayBuffer(f);
-      });
-
-      // 左邊按鈕切換工具頁
-      const btns = document.querySelectorAll(".nav-btn");
-      const frame = document.getElementById("toolFrame");
-
-      function loadPage(page, btn) {
-        frame.src = page;
-        btns.forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-        setPageStatus("目前開啟：" + btn.textContent.trim());
-      }
-
-      btns.forEach(btn => {
-        btn.addEventListener("click", () => {
-          const page = btn.getAttribute("data-page");
-          loadPage(page, btn);
-        });
-      });
-
-      // 預設先開 ICD-10-CM
-      const defaultBtn =
-        document.querySelector('.nav-btn[data-page="ICD-10-CM.html"]') || btns[0];
-      if (defaultBtn) {
-        loadPage(defaultBtn.getAttribute("data-page"), defaultBtn);
-      }
-
-      // 初始狀態
-      setExcelStatus("嘗試自動載入同資料夾的 icd-10.xlsx …", false);
-      setPageStatus("請先確認上方 Excel 已載入，再從左側選工具。");
-
-      // 嘗試自動載入
-      tryAutoLoadExcel();
-    });
-  </script>
 </head>
 <body>
-  <header>
-    <div>
-      <div class="title">ICD-10 查詢工具整合</div>
-      <div class="desc">Drug / External / ICD-10-CM / Neoplasms / PCS — Excel 匯入一次共用</div>
-    </div>
-
-    <div class="right">
-      <div id="uploadArea" style="display:none;">
-        <span>或手動匯入 Excel：</span>
-        <input type="file" id="masterExcel" accept=".xlsx,.xls">
-      </div>
-    </div>
-  </header>
-
-  <main>
-    <nav>
-      <div class="nav-title">功能選單</div>
-      <button class="nav-btn" data-page="ICD-10-CM.html">ICD-10-CM 主索引</button>
-      <button class="nav-btn" data-page="drug.html">Drug Table</button>
-      <button class="nav-btn" data-page="external.html">External Causes</button>
-      <button class="nav-btn" data-page="neoplasms.html">Neoplasms 索引</button>
-      <button class="nav-btn" data-page="pcs.html">PCS 組碼</button>
-    </nav>
-
-    <iframe id="toolFrame" src=""></iframe>
-  </main>
-
-  <div id="statusBar">
-    <span id="excelStatus"></span>
-    <span id="pageStatus"></span>
+<header>
+  <div>
+    <h1>ICD-10 查詢工具整合頁</h1>
+    <div class="sub">一次匯入 Excel，切換 Drug / External / ICD-10-CM / Neoplasms / PCS</div>
   </div>
+</header>
+
+<div id="top-bar">
+  <label>
+    Excel 檔（icd-10.xlsx）：
+    <input type="file" id="excelInput" accept=".xlsx,.xls" />
+  </label>
+  <div id="excelStatus">尚未載入 Excel，請選擇檔案。</div>
+</div>
+
+<div id="tool-bar">
+  <!-- data-page 必須和 GitHub 上的檔名大小寫一模一樣 -->
+  <button class="tool-btn active" data-page="ICD-10-CM.html">ICD-10-CM</button>
+  <button class="tool-btn" data-page="drug.html">Drug</button>
+  <button class="tool-btn" data-page="external.html">External Causes</button>
+  <button class="tool-btn" data-page="NEOPLASMS.html">Neoplasms</button>
+  <button class="tool-btn" data-page="PCS.html">PCS</button>
+</div>
+
+<main>
+  <div id="frameWrapper">
+    <!-- 一個 iframe 動態切換子頁 -->
+    <iframe id="toolFrame" src="ICD-10-CM.html"></iframe>
+  </div>
+  <div id="pageStatus">
+    目前頁面：ICD-10-CM（請先於上方匯入 Excel 才能查詢）
+  </div>
+</main>
+
+<script>
+  // ===== 全域共用的 Excel 資料（給子頁用）=====
+  // 結構會是：
+  // window.ICD_SHARED_DATA = {
+  //   fileName: "...",
+  //   sheets: {
+  //     icdIdx: [...],
+  //     icdDesc: [...],
+  //     drugIdx: [...],
+  //     externalIdx: [...],
+  //     neoplasms: [...],
+  //     pcsTable: [...],
+  //     pcsIdx: [...]
+  //   }
+  // };
+  window.ICD_SHARED_DATA = { fileName: "", sheets: {} };
+
+  const excelInput   = document.getElementById("excelInput");
+  const excelStatus  = document.getElementById("excelStatus");
+  const pageStatus   = document.getElementById("pageStatus");
+  const toolFrame    = document.getElementById("toolFrame");
+  const toolButtons  = Array.from(document.querySelectorAll(".tool-btn"));
+
+  // 切換工具頁（切換 iframe src）
+  toolButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      toolButtons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      const page = btn.getAttribute("data-page");
+      toolFrame.src = page;
+      pageStatus.textContent = `目前頁面：${btn.textContent}（若已匯入 Excel，會共用同一份資料）`;
+
+      // 每次換頁，等 iframe onload 後再補發一個 "Excel 已載入" 訊號
+      toolFrame.addEventListener("load", () => {
+        if (window.ICD_SHARED_DATA && window.ICD_SHARED_DATA.sheets &&
+            Object.keys(window.ICD_SHARED_DATA.sheets).length > 0) {
+          notifyChildExcelLoaded();
+        }
+      }, { once: true });
+    });
+  });
+
+  // 匯入 Excel：只在 index 做一次
+  excelInput.addEventListener("change", function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    excelStatus.className = "";
+    excelStatus.textContent = "讀取中…";
+
+    const reader = new FileReader();
+    reader.onload = function (evt) {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          excelStatus.className = "error";
+          excelStatus.textContent = "Excel 檔沒有任何工作表。";
+          return;
+        }
+
+        const sheets = {};
+
+        workbook.SheetNames.forEach(name => {
+          const lower = name.toLowerCase();
+          const json = XLSX.utils.sheet_to_json(workbook.Sheets[name], { defval: "" });
+
+          if (lower === "icd10_idx") {
+            sheets.icdIdx = json;
+          } else if (lower === "icd10_desc") {
+            sheets.icdDesc = json;
+          } else if (lower === "drug_idx") {
+            sheets.drugIdx = json;
+          } else if (lower === "external_idx" || lower === "external") {
+            sheets.externalIdx = json;
+          } else if (lower === "neoplasms") {
+            sheets.neoplasms = json;
+          } else if (lower === "pcs_table") {
+            sheets.pcsTable = json;
+          } else if (lower === "pcs_idx") {
+            sheets.pcsIdx = json;
+          }
+        });
+
+        window.ICD_SHARED_DATA = {
+          fileName: file.name,
+          sheets: sheets
+        };
+
+        const loadedSheets = Object.keys(sheets)
+          .map(k => `${k}（${sheets[k].length} 筆）`)
+          .join("，");
+
+        excelStatus.className = "success";
+        excelStatus.textContent =
+          `已載入：${file.name}\n` +
+          (loadedSheets ? `已解析工作表：${loadedSheets}` : "（未找到對應的工作表名稱）");
+
+        // 通知目前 iframe 子頁：「Excel 已載入」
+        notifyChildExcelLoaded();
+      } catch (err) {
+        console.error(err);
+        excelStatus.className = "error";
+        excelStatus.textContent = "讀取或解析 Excel 時發生錯誤：" + err.message;
+      }
+    };
+    reader.onerror = function (err) {
+      console.error(err);
+      excelStatus.className = "error";
+      excelStatus.textContent = "檔案讀取失敗。";
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  // 用 postMessage 通知子頁重新從 parent 讀取 ICD_SHARED_DATA
+  function notifyChildExcelLoaded() {
+    if (!toolFrame || !toolFrame.contentWindow) return;
+    toolFrame.contentWindow.postMessage({ type: "ICD_EXCEL_LOADED" }, "*");
+  }
+
+  // 頁面一開始：iframe 載入完成後，如果之前已載入過 Excel，就同步一次
+  toolFrame.addEventListener("load", () => {
+    if (window.ICD_SHARED_DATA && window.ICD_SHARED_DATA.sheets &&
+        Object.keys(window.ICD_SHARED_DATA.sheets).length > 0) {
+      notifyChildExcelLoaded();
+    }
+  });
+</script>
 </body>
 </html>
