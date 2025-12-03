@@ -2,9 +2,9 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8" />
-    <title>Drug_idx 樹狀索引 + 六欄 Intent 顯示（從 Excel 讀取）</title>
+    <title>Drug_idx 樹狀索引 + 六欄 Intent 顯示（從 Excel 讀取 / 或整合首頁共享）</title>
 
-    <!-- 讀取 Excel 用的 xlsx 套件（要有網路才能載到） -->
+    <!-- 讀取 Excel 用的 xlsx 套件（單獨開啟本頁、自己匯入時會用到） -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
     <style>
@@ -111,13 +111,13 @@
 
         #file-info {
             font-size: 12px;
-            color: #555;
+            color: #f0f0f0;
             margin-top: 4px;
             white-space: pre-line;
         }
 
         #error-msg {
-            color: #c00;
+            color: #ffdddd;
             font-size: 12px;
             margin-top: 4px;
             white-space: pre-line;
@@ -192,13 +192,13 @@
 </head>
 <body>
 <header>
-    Drug_idx 樹狀索引 Demo（從 Excel 讀取）  
+    Drug_idx 樹狀索引 Demo（Excel 讀取 / 整合首頁共享）  
     — 點選左側 Substance，下方顯示：Unintentional / Self-harm / Assault / Undetermined / Side effect / Underdosing
 </header>
 
 <div id="main">
     <div id="tree-panel">
-        <h3 style="margin-top: 0;">1. 請先選擇 Drug_idx 的 Excel 檔</h3>
+        <h3 style="margin-top: 0;">1. 選擇 Drug_idx 的 Excel 檔（或在整合首頁匯入）</h3>
 
         <input type="file" id="file-input" accept=".xlsx,.xls" />
         <div id="file-info"></div>
@@ -243,6 +243,133 @@
         }
     }
 
+    /* =========================
+       1. 從整合首頁共用 Excel 資料
+       ========================= */
+    function mapDrugRowsFromRaw(rawRows) {
+        return (rawRows || []).map(function(r, index) {
+            return {
+                Serial: String(
+                    (r.Serial !== undefined && r.Serial !== "") ? r.Serial :
+                    (r.serial !== undefined && r.serial !== "") ? r.serial :
+                    (index + 1)
+                ),
+                Substance: (r.Substance || r.substance || "").toString(),
+                Level: (r.Level || r.level || ""),
+                ParentID: (r.ParentID === "" || r.ParentID === null || r.ParentID === undefined)
+                    ? null
+                    : String(r.ParentID),
+                Unintentional: (r.Unintentional || r.unintentional || "").toString(),
+                SelfHarm: (r.SelfHarm || r.selfharm || "").toString(),
+                Assault: (r.Assault || r.assault || "").toString(),
+                Undetermined: (r.Undetermined || r.undetermined || "").toString(),
+                SideEffect: (r.SideEffect || r.sideeffect || "").toString(),
+                Underdosing: (r.Underdosing || r.underdosing || "").toString()
+            };
+        }).filter(function(row) {
+            return row.Substance !== "";
+        });
+    }
+
+    function mapIcdDescFromRaw(rawRows) {
+        return (rawRows || []).map(function(r) {
+            // 支援原始 sheet 或已處理過的格式
+            var code = (r.code || r.Code || "").toString().trim();
+            if (!code) return null;
+            var longdes = (r.longdes || r.Longdes || r.engdesc || r.Engdesc || r.ENGDESC || "").toString();
+            var flagRaw = (r.Flag || r.FLAG || r.flag || "").toString().trim().toLowerCase();
+            var flag = (flagRaw === "true" || flagRaw === "1" || flagRaw === "y" || flagRaw === "yes");
+            // 若父頁已經有 Flag:boolean 就沿用
+            if (typeof r.Flag === "boolean") {
+                flag = r.Flag;
+            }
+            return {
+                code: code,
+                longdes: longdes,
+                Flag: flag
+            };
+        }).filter(function(row){ return row !== null; });
+    }
+
+    function tryInitFromParentShared() {
+        try {
+            // 沒有 parent 或 parent 就是自己 → 單獨開啟，交給本頁的 file input
+            if (!window.parent || window.parent === window) return false;
+
+            var shared = window.parent.ICD_SHARED_DATA;
+            if (!shared || !shared.sheets) return false;
+
+            // 盡量容錯地抓 Drug_idx / ICD10_desc
+            var drugRaw = shared.sheets.drugIdx ||
+                          shared.sheets.Drug_idx ||
+                          shared.sheets.drug ||
+                          shared.sheets.DRUG_IDX ||
+                          [];
+            var descRaw = shared.sheets.icdDesc ||
+                          shared.sheets.ICD10_desc ||
+                          shared.sheets.icd10_desc ||
+                          [];
+
+            if (!drugRaw.length) {
+                var st = document.getElementById("file-info");
+                if (st) {
+                    st.textContent = "偵測到整合首頁，但尚未在首頁匯入 Drug_idx。";
+                }
+                return false;
+            }
+
+            currentDrugData = mapDrugRowsFromRaw(drugRaw);
+            icdDescData = mapIcdDescFromRaw(descRaw);
+
+            buildDrugTree(currentDrugData);
+            showDrugCodes(null);
+
+            var info = document.getElementById("file-info");
+            if (info) {
+                info.textContent =
+                    "使用整合首頁共用資料：Drug_idx " + currentDrugData.length +
+                    " 筆 / ICD10_desc " + icdDescData.length + " 筆。";
+            }
+
+            var treeHint = document.getElementById("tree-hint");
+            var detailHint = document.getElementById("detail-hint");
+            if (treeHint) treeHint.textContent = "請使用搜尋或點選下方樹狀清單。";
+            if (detailHint) detailHint.textContent = "點選左側 Substance 後，這裡會出現對應的 6 欄內容（一次只能選一個）。";
+
+            var treeSearch = document.getElementById("tree-search");
+            if (treeSearch) {
+                treeSearch.disabled = false;
+            }
+
+            // 鎖住本頁的 file input，避免跟首頁匯入重複
+            var fileInput = document.getElementById("file-input");
+            if (fileInput) {
+                fileInput.disabled = true;
+                fileInput.style.opacity = 0.5;
+                fileInput.title = "已由整合首頁載入 Excel，共用同一份資料";
+            }
+
+            return true;
+        } catch (e) {
+            console.error("tryInitFromParentShared error:", e);
+            return false;
+        }
+    }
+
+    // 頁面載入時先試著從 parent 拿共用資料
+    window.addEventListener("load", function () {
+        tryInitFromParentShared();
+    });
+
+    // 如果首頁重新匯入 Excel，會用 postMessage 通知子頁
+    window.addEventListener("message", function (e) {
+        if (!e.data || e.data.type !== "ICD_EXCEL_LOADED") return;
+        tryInitFromParentShared();
+    });
+
+    /* =========================
+       2. 單獨使用本頁：自己匯入 Excel
+       ========================= */
     document.getElementById("file-input").addEventListener("change", handleFile, false);
 
     function handleFile(event) {
@@ -304,53 +431,19 @@
                 info.textContent += "\n使用 Drug_idx 工作表：" + drugSheetName;
 
                 var drugJson = XLSX.utils.sheet_to_json(drugSheet, { defval: "" });
-
                 if (drugJson.length === 0) {
                     showError("Drug_idx 工作表是空的，請確認 Excel 有資料。");
                     return;
                 }
 
-                currentDrugData = drugJson.map(function(r, index) {
-                    return {
-                        Serial: String(
-                            (r.Serial !== undefined && r.Serial !== "") ? r.Serial :
-                            (r.serial !== undefined && r.serial !== "") ? r.serial :
-                            (index + 1)
-                        ),
-                        Substance: (r.Substance || r.substance || "").toString(),
-                        Level: (r.Level || r.level || ""),
-                        ParentID: (r.ParentID === "" || r.ParentID === null || r.ParentID === undefined)
-                            ? null
-                            : String(r.ParentID),
-                        Unintentional: (r.Unintentional || r.unintentional || "").toString(),
-                        SelfHarm: (r.SelfHarm || r.selfharm || "").toString(),
-                        Assault: (r.Assault || r.assault || "").toString(),
-                        Undetermined: (r.Undetermined || r.undetermined || "").toString(),
-                        SideEffect: (r.SideEffect || r.sideeffect || "").toString(),
-                        Underdosing: (r.Underdosing || r.underdosing || "").toString()
-                    };
-                }).filter(function(row) {
-                    return row.Substance !== "";
-                });
+                currentDrugData = mapDrugRowsFromRaw(drugJson);
 
                 // 讀 ICD10_desc，若存在
                 var descSheetName = "ICD10_desc";
                 if (workbook.Sheets[descSheetName]) {
                     var descSheet = workbook.Sheets[descSheetName];
                     var descJson = XLSX.utils.sheet_to_json(descSheet, { defval: "" });
-                    icdDescData = descJson.map(function(r) {
-                        var code = (r.code || r.Code || "").toString().trim();
-                        if (!code) return null;
-                        var longdes = (r.longdes || r.Longdes || r.engdesc || r.Engdesc || "").toString();
-                        var flagRaw = (r.Flag || r.FLAG || r.flag || "").toString().trim().toLowerCase();
-                        var flag = (flagRaw === "true" || flagRaw === "1" || flagRaw === "y" || flagRaw === "yes");
-                        return {
-                            code: code,
-                            longdes: longdes,
-                            Flag: flag
-                        };
-                    }).filter(function(row){ return row !== null; });
-
+                    icdDescData = mapIcdDescFromRaw(descJson);
                     info.textContent += "\nICD10_desc 讀入筆數：" + icdDescData.length;
                 } else {
                     info.textContent += "\n（未找到 ICD10_desc 工作表，延伸碼下拉選單將為空）";
@@ -497,7 +590,6 @@
         var se = row.SideEffect    || "";
         var ud = row.Underdosing   || "";
 
-        // 這裡改成 radio（name 相同），一次只能選一個
         function buildCodeCell(codeVal, label) {
             var v = (codeVal || "").trim();
             if (!v) {
@@ -553,7 +645,6 @@
         updateSelectedCodesArea(wrapper);
     }
 
-    // 依目前選到的 radio 更新下方「代碼名稱 + 下拉 + 複製」；一次最多一筆
     function updateSelectedCodesArea(wrapper) {
         var area = wrapper.querySelector("#selected-codes-area");
         if (!area) return;
@@ -626,7 +717,7 @@
         if (!icdDescData || !icdDescData.length) return [];
         var prefix = (baseCode || "").trim();
         if (!prefix) return [];
-        var simplePrefix = prefix.replace(/\s+/g, ""); // 去掉空白
+        var simplePrefix = prefix.replace(/\s+/g, "");
 
         return icdDescData.filter(function(r) {
             if (!r.Flag) return false;
