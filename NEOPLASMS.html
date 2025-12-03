@@ -307,20 +307,6 @@ ICD10_desc 欄位：code, engdesc（或 longdes）, Flag。
   const neoDetail     = document.getElementById("neoplasmDetail");
   const finalCodeArea = document.getElementById("finalCodeArea");
 
-  // ===== 小工具：找工作表名稱（不分大小寫 + 模糊） =====
-  function findSheetNameLike(workbook, target) {
-    const sheetNames = workbook.SheetNames || [];
-    const t = target.toLowerCase();
-
-    // 1. 完全相同
-    let found = sheetNames.find(name => name.toLowerCase() === t);
-    if (found) return found;
-
-    // 2. 含有關鍵字
-    found = sheetNames.find(name => name.toLowerCase().includes(t));
-    return found || null;
-  }
-
   // ===== reset =====
   function resetAll() {
     neoRows = [];
@@ -345,7 +331,132 @@ ICD10_desc 欄位：code, engdesc（或 longdes）, Flag。
     finalCodeArea.textContent = "尚未選擇 Neoplasm 代碼。";
   }
 
-  // ===== 讀 Excel =====
+  // ===== map 函式（給首頁共用資料 & 本地 Excel 共用） =====
+  function mapNeoRowsFromRaw(rawRows) {
+    return (rawRows || []).map((r, idx) => ({
+      Pkey:       String(r.Pkey || r.pkey || (idx + 1)),
+      Parentid:   (r.Parentid   || r.parentid   || "").toString(),
+      SortID:     (r.SortID     || r.sortid     || "").toString(),
+      parentname: (r.parentname || "").toString(),
+      NAME:       (r.NAME       || r.Name || "").toString(),
+      MaligP:     (r.Malignant_Primary       || "").toString(),
+      MaligS:     (r.Malignant_Secondary     || "").toString(),
+      MaligCis:   (r["Malignant_Ca in situ"] || r.Malignant_Ca_in_situ || "").toString(),
+      Benign:     (r.Benign || "").toString(),
+      Uncertain:  (r.Uncertain_Behavior || "").toString(),
+      Unspec:     (r.Unspecified || "").toString()
+    })).filter(row => row.NAME !== "");
+  }
+
+  function mapDescRowsFromRaw(rawRows) {
+    const rows = (rawRows || []).map(r => {
+      const code = (r.code || r.Code || "").toString().trim();
+      if (!code) return null;
+      const eng = (r.engdesc || r.Engdesc || r.longdes || r.Longdes || "").toString();
+      const rawFlag = (r.Flag || r.flag || r.FLAG || "").toString().trim().toLowerCase();
+      const flag = (rawFlag === "true" || rawFlag === "1" || rawFlag === "y" || rawFlag === "yes");
+      return { code, engdesc: eng, Flag: flag };
+    }).filter(x => x !== null);
+
+    const map = {};
+    rows.forEach(r => { map[r.code] = r; });
+    return { rows, map };
+  }
+
+  // ===== 嘗試從整合首頁共用 Excel =====
+  function tryInitFromParentShared() {
+    try {
+      if (!window.parent || window.parent === window) return false;
+      const shared = window.parent.ICD_SHARED_DATA;
+      if (!shared || !shared.sheets) return false;
+
+      // 可能的 Neoplasms key 名稱
+      const rawNeo =
+        shared.sheets.neoplasms ||
+        shared.sheets.NEOPLASMS ||
+        shared.sheets.Neoplasms ||
+        shared.sheets.neo ||
+        [];
+
+      const rawDesc =
+        shared.sheets.icdDesc ||
+        shared.sheets.ICD10_desc ||
+        shared.sheets.icd10_desc ||
+        [];
+
+      if (!rawNeo.length) {
+        if (loadStatus) {
+          loadStatus.className = "status";
+          loadStatus.textContent = "偵測到整合首頁，但尚未載入 Neoplasms。";
+        }
+        return false;
+      }
+
+      resetAll();
+
+      neoRows = mapNeoRowsFromRaw(rawNeo);
+      const { rows: dRows, map: dMap } = mapDescRowsFromRaw(rawDesc);
+      descRows = dRows;
+      descMap  = dMap;
+
+      buildNeoTree();
+      renderNeoList("");
+
+      if (neoSearch) {
+        neoSearch.disabled = false;
+        neoSearch.placeholder = "搜尋 NAME / parentname（多關鍵字可用空白分隔）";
+      }
+      if (neoStatus) {
+        neoStatus.textContent = "使用整合首頁共用資料：Neoplasms " + neoRows.length + " 列。";
+      }
+
+      if (loadStatus) {
+        const descInfo = descRows.length
+          ? ("ICD10_desc 筆數：" + descRows.length)
+          : "（未找到 ICD10_desc 工作表，下方只會顯示代碼）";
+        loadStatus.className = "status success";
+        loadStatus.textContent =
+          "從整合首頁取得資料：Neoplasms " + neoRows.length + " 列。\n" + descInfo;
+      }
+
+      // 鎖住本頁檔案上傳
+      if (fileInput) {
+        fileInput.disabled = true;
+        fileInput.style.opacity = 0.5;
+        fileInput.title = "已由整合首頁載入 Excel，共用同一份資料";
+      }
+
+      return true;
+    } catch (e) {
+      console.error("tryInitFromParentShared error:", e);
+      return false;
+    }
+  }
+
+  window.addEventListener("load", () => {
+    tryInitFromParentShared();
+  });
+
+  window.addEventListener("message", (e) => {
+    if (!e.data || e.data.type !== "ICD_EXCEL_LOADED") return;
+    tryInitFromParentShared();
+  });
+
+  // ===== 小工具：找工作表名稱（不分大小寫 + 模糊） =====
+  function findSheetNameLike(workbook, target) {
+    const sheetNames = workbook.SheetNames || [];
+    const t = target.toLowerCase();
+
+    // 1. 完全相同
+    let found = sheetNames.find(name => name.toLowerCase() === t);
+    if (found) return found;
+
+    // 2. 含有關鍵字
+    found = sheetNames.find(name => name.toLowerCase().includes(t));
+    return found || null;
+  }
+
+  // ===== 單獨使用本頁：自己匯入 Excel =====
   fileInput.addEventListener("change", e => {
     const file = e.target.files[0];
     resetAll();
@@ -374,20 +485,7 @@ ICD10_desc 欄位：code, engdesc（或 longdes）, Flag。
         const neoSheet = workbook.Sheets[neoSheetName];
         const neoJson  = XLSX.utils.sheet_to_json(neoSheet, { defval: "" });
 
-        neoRows = neoJson.map((r, idx) => ({
-          Pkey:       String(r.Pkey || r.pkey || (idx + 1)),
-          Parentid:   (r.Parentid   || r.parentid   || "").toString(),
-          SortID:     (r.SortID     || r.sortid     || "").toString(),
-          parentname: (r.parentname || "").toString(),
-          NAME:       (r.NAME       || r.Name || "").toString(),
-          MaligP:     (r.Malignant_Primary       || "").toString(),
-          MaligS:     (r.Malignant_Secondary     || "").toString(),
-          MaligCis:   (r["Malignant_Ca in situ"] || r.Malignant_Ca_in_situ || "").toString(),
-          Benign:     (r.Benign || "").toString(),
-          Uncertain:  (r.Uncertain_Behavior || "").toString(),
-          Unspec:     (r.Unspecified || "").toString()
-        })).filter(row => row.NAME !== "");
-
+        neoRows = mapNeoRowsFromRaw(neoJson);
         if (!neoRows.length) {
           throw new Error("Neoplasms（或對應工作表）資料列為 0");
         }
@@ -397,16 +495,9 @@ ICD10_desc 欄位：code, engdesc（或 longdes）, Flag。
         if (descSheetName && workbook.Sheets[descSheetName]) {
           const dSheet = workbook.Sheets[descSheetName];
           const dJson  = XLSX.utils.sheet_to_json(dSheet, { defval: "" });
-          descRows = dJson.map(r => {
-            const code = (r.code || r.Code || "").toString().trim();
-            if (!code) return null;
-            const eng = (r.engdesc || r.Engdesc || r.longdes || r.Longdes || "").toString();
-            const rawFlag = (r.Flag || r.flag || r.FLAG || "").toString().trim().toLowerCase();
-            const flag = (rawFlag === "true" || rawFlag === "1" || rawFlag === "y" || rawFlag === "yes");
-            return { code, engdesc: eng, Flag: flag };
-          }).filter(x => x !== null);
-          descMap = {};
-          descRows.forEach(r => { descMap[r.code] = r; });
+          const mapped = mapDescRowsFromRaw(dJson);
+          descRows = mapped.rows;
+          descMap  = mapped.map;
         } else {
           descRows = [];
           descMap  = {};
@@ -501,7 +592,7 @@ ICD10_desc 欄位：code, engdesc（或 longdes）, Flag。
       // 縮排：依 level
       div.style.paddingLeft = (4 + node.level * 14) + "px";
 
-      // 顯示名稱：去掉前面的 "-"
+      // 顯示名稱：去掉前面的 "- "
       const rawName = r.NAME || "";
       const displayName = rawName.replace(/^[\s\-]+/, "") || rawName || "(無名稱)";
 
