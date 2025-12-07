@@ -2,278 +2,305 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>ICD-10 工具總入口</title>
-
-  <!-- XLSX：給 index 讀 Excel 用 -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
+  <title>ICD-10 查詢（JSON 版）</title>
   <style>
     body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       margin: 0;
-      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      padding: 0;
       background: #f5f5f7;
-      color: #111827;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
+      color: #222;
     }
     header {
-      padding: 12px 20px;
+      padding: 16px 24px;
       background: #111827;
-      color: #f9fafb;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 10px;
+      color: #fff;
     }
     header h1 {
       margin: 0;
-      font-size: 1.2rem;
-      font-weight: 600;
+      font-size: 1.4rem;
     }
-    header .sub {
-      font-size: 0.85rem;
-      opacity: 0.85;
+    header p {
+      margin: 4px 0 0;
+      font-size: 0.9rem;
+      opacity: 0.8;
     }
-
-    #top-bar {
-      padding: 10px 20px;
+    main {
+      padding: 16px 24px 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .toolbar {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 12px;
       align-items: center;
-      background: #e5e7eb;
-      border-bottom: 1px solid #d1d5db;
+      margin-bottom: 16px;
     }
-    #excelInput {
-      padding: 4px;
+    .toolbar label {
       font-size: 0.9rem;
+      color: #374151;
     }
-    #excelStatus {
-      font-size: 0.85rem;
-      color: #4b5563;
-      white-space: pre-line;
-    }
-    #excelStatus.error {
-      color: #b91c1c;
-    }
-    #excelStatus.success {
-      color: #065f46;
-    }
-
-    #tool-bar {
-      padding: 8px 20px;
-      display: flex;
-      gap: 8px;
-      border-bottom: 1px solid #e5e7eb;
-      background: #f9fafb;
-    }
-    .tool-btn {
-      border-radius: 999px;
+    .toolbar input[type="text"] {
+      padding: 6px 10px;
+      border-radius: 6px;
       border: 1px solid #d1d5db;
-      padding: 4px 10px;
-      background: white;
-      font-size: 0.85rem;
-      cursor: pointer;
+      min-width: 260px;
+      font-size: 0.95rem;
     }
-    .tool-btn.active {
-      background: #2563eb;
-      border-color: #1d4ed8;
-      color: white;
+    .toolbar select {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      font-size: 0.9rem;
+      background: #fff;
     }
-    .tool-btn:hover:not(.active) {
-      background: #e5e7eb;
-    }
-
-    main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-    #frameWrapper {
-      flex: 1;
-      border-top: 1px solid #e5e7eb;
-    }
-    #toolFrame {
-      width: 100%;
-      height: 100%;
-      border: none;
-      background: white;
-    }
-
-    #pageStatus {
+    .toolbar .small {
       font-size: 0.8rem;
-      padding: 4px 20px;
       color: #6b7280;
+    }
+    .status {
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    }
+    thead {
+      background: #111827;
+      color: #f9fafb;
+    }
+    th, td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 0.85rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    tr:nth-child(even) td {
       background: #f9fafb;
-      border-top: 1px solid #e5e7eb;
+    }
+    .code-cell {
+      white-space: nowrap;
+      font-weight: 600;
+      color: #111827;
+    }
+    .desc-cell {
+      max-width: 480px;
+    }
+    .desc-cell small {
+      display: block;
+      color: #6b7280;
+    }
+    .no-data {
+      padding: 24px;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 0.9rem;
     }
   </style>
 </head>
 <body>
-<header>
-  <div>
-    <h1>ICD-10 查詢工具整合頁</h1>
-    <div class="sub">一次匯入 Excel，切換 Drug / External / ICD-10-CM / Neoplasms / PCS</div>
-  </div>
-</header>
+  <header>
+    <h1>ICD-10 查詢（使用 icd-10.json）</h1>
+    <p>支援依代碼 / 關鍵字模糊搜尋，資料從 JSON 載入，不再在前端解析 Excel。</p>
+  </header>
 
-<div id="top-bar">
-  <label>
-    Excel 檔（icd-10.xlsx）：
-    <input type="file" id="excelInput" accept=".xlsx,.xls" />
-  </label>
-  <div id="excelStatus">尚未載入 Excel，請選擇檔案。</div>
-</div>
+  <main>
+    <div class="toolbar">
+      <label>
+        搜尋：
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="輸入代碼或說明關鍵字，例如：A41、敗血症、肺炎..."
+        />
+      </label>
 
-<div id="tool-bar">
-  <!-- data-page 必須和 GitHub 上的檔名大小寫一模一樣 -->
-  <button class="tool-btn active" data-page="ICD-10-CM.html">ICD-10-CM</button>
-  <button class="tool-btn" data-page="drug.html">Drug</button>
-  <button class="tool-btn" data-page="external.html">External Causes</button>
-  <button class="tool-btn" data-page="NEOPLASMS.html">Neoplasms</button>
-  <button class="tool-btn" data-page="PCS.html">PCS</button>
-</div>
+      <label>
+        資料表（Sheet）：
+        <select id="sheetSelect"></select>
+      </label>
 
-<main>
-  <div id="frameWrapper">
-    <!-- 一個 iframe 動態切換子頁 -->
-    <iframe id="toolFrame" src="ICD-10-CM.html"></iframe>
-  </div>
-  <div id="pageStatus">
-    目前頁面：ICD-10-CM（請先於上方匯入 Excel 才能查詢）
-  </div>
-</main>
+      <label>
+        筛選方式：
+        <select id="modeSelect">
+          <option value="all">全部欄位模糊搜尋</option>
+          <option value="code">只比對代碼開頭（Code starts with）</option>
+        </select>
+      </label>
 
-<script>
-  // ===== 全域共用的 Excel 資料（給子頁用）=====
-  // 結構會是：
-  // window.ICD_SHARED_DATA = {
-  //   fileName: "...",
-  //   sheets: {
-  //     icdIdx: [...],
-  //     icdDesc: [...],
-  //     drugIdx: [...],
-  //     externalIdx: [...],
-  //     neoplasms: [...],
-  //     pcsTable: [...],
-  //     pcsIdx: [...]
-  //   }
-  // };
-  window.ICD_SHARED_DATA = { fileName: "", sheets: {} };
+      <span class="small">※ 目前先顯示前 200 筆結果，避免一次載入過多太卡。</span>
+    </div>
 
-  const excelInput   = document.getElementById("excelInput");
-  const excelStatus  = document.getElementById("excelStatus");
-  const pageStatus   = document.getElementById("pageStatus");
-  const toolFrame    = document.getElementById("toolFrame");
-  const toolButtons  = Array.from(document.querySelectorAll(".tool-btn"));
+    <div class="status" id="statusText">載入中...</div>
 
-  // 切換工具頁（切換 iframe src）
-  toolButtons.forEach(btn => {
-    btn.addEventListener("click", () => {
-      toolButtons.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
+    <div id="tableContainer"></div>
+  </main>
 
-      const page = btn.getAttribute("data-page");
-      toolFrame.src = page;
-      pageStatus.textContent = `目前頁面：${btn.textContent}（若已匯入 Excel，會共用同一份資料）`;
+  <script>
+    let icdRaw = null;       // 原始整個 JSON { sheetName: [rows...] }
+    let currentSheet = null; // 目前選擇的 sheet 名稱
+    let allRows = [];        // 目前 sheet 的所有列
 
-      // 每次換頁，等 iframe onload 後再補發一個 "Excel 已載入" 訊號
-      toolFrame.addEventListener("load", () => {
-        if (window.ICD_SHARED_DATA && window.ICD_SHARED_DATA.sheets &&
-            Object.keys(window.ICD_SHARED_DATA.sheets).length > 0) {
-          notifyChildExcelLoaded();
-        }
-      }, { once: true });
-    });
-  });
-
-  // 匯入 Excel：只在 index 做一次
-  excelInput.addEventListener("change", function (e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    excelStatus.className = "";
-    excelStatus.textContent = "讀取中…";
-
-    const reader = new FileReader();
-    reader.onload = function (evt) {
+    // 1. 一開始載入 JSON
+    async function loadICDJson() {
       try {
-        const data = new Uint8Array(evt.target.result);
-        const workbook = XLSX.read(data, { type: "array" });
+        const res = await fetch("icd-10.json");
+        if (!res.ok) throw new Error("載入失敗：" + res.status);
+        icdRaw = await res.json();
 
-        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-          excelStatus.className = "error";
-          excelStatus.textContent = "Excel 檔沒有任何工作表。";
+        const sheetNames = Object.keys(icdRaw);
+        if (sheetNames.length === 0) {
+          setStatus("icd-10.json 內沒有任何工作表資料。");
           return;
         }
 
-        const sheets = {};
-
-        workbook.SheetNames.forEach(name => {
-          const lower = name.toLowerCase();
-          const json = XLSX.utils.sheet_to_json(workbook.Sheets[name], { defval: "" });
-
-          if (lower === "icd10_idx") {
-            sheets.icdIdx = json;
-          } else if (lower === "icd10_desc") {
-            sheets.icdDesc = json;
-          } else if (lower === "drug_idx") {
-            sheets.drugIdx = json;
-          } else if (lower === "external_idx" || lower === "external") {
-            sheets.externalIdx = json;
-          } else if (lower === "neoplasms") {
-            sheets.neoplasms = json;
-          } else if (lower === "pcs_table") {
-            sheets.pcsTable = json;
-          } else if (lower === "pcs_idx") {
-            sheets.pcsIdx = json;
-          }
+        // 填滿 sheet 下拉選單
+        const sheetSelect = document.getElementById("sheetSelect");
+        sheetSelect.innerHTML = "";
+        sheetNames.forEach((name, idx) => {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          sheetSelect.appendChild(opt);
         });
 
-        window.ICD_SHARED_DATA = {
-          fileName: file.name,
-          sheets: sheets
-        };
+        // 預設選第一個 sheet（你如果想固定用某一張，例如 ICD10Tab，可以改這裡）
+        currentSheet = sheetNames[0];
+        sheetSelect.value = currentSheet;
 
-        const loadedSheets = Object.keys(sheets)
-          .map(k => `${k}（${sheets[k].length} 筆）`)
-          .join("，");
+        allRows = icdRaw[currentSheet] || [];
+        setStatus(`已載入工作表「${currentSheet}」，共 ${allRows.length} 筆。`);
+        renderTable(allRows.slice(0, 200));
 
-        excelStatus.className = "success";
-        excelStatus.textContent =
-          `已載入：${file.name}\n` +
-          (loadedSheets ? `已解析工作表：${loadedSheets}` : "（未找到對應的工作表名稱）");
-
-        // 通知目前 iframe 子頁：「Excel 已載入」
-        notifyChildExcelLoaded();
+        // 綁定事件
+        sheetSelect.addEventListener("change", onSheetChange);
+        document.getElementById("searchInput").addEventListener("input", debounce(onSearchInput, 200));
+        document.getElementById("modeSelect").addEventListener("change", onSearchInput);
       } catch (err) {
         console.error(err);
-        excelStatus.className = "error";
-        excelStatus.textContent = "讀取或解析 Excel 時發生錯誤：" + err.message;
+        setStatus("載入 icd-10.json 時發生錯誤：" + err.message);
       }
-    };
-    reader.onerror = function (err) {
-      console.error(err);
-      excelStatus.className = "error";
-      excelStatus.textContent = "檔案讀取失敗。";
-    };
-    reader.readAsArrayBuffer(file);
-  });
-
-  // 用 postMessage 通知子頁重新從 parent 讀取 ICD_SHARED_DATA
-  function notifyChildExcelLoaded() {
-    if (!toolFrame || !toolFrame.contentWindow) return;
-    toolFrame.contentWindow.postMessage({ type: "ICD_EXCEL_LOADED" }, "*");
-  }
-
-  // 頁面一開始：iframe 載入完成後，如果之前已載入過 Excel，就同步一次
-  toolFrame.addEventListener("load", () => {
-    if (window.ICD_SHARED_DATA && window.ICD_SHARED_DATA.sheets &&
-        Object.keys(window.ICD_SHARED_DATA.sheets).length > 0) {
-      notifyChildExcelLoaded();
     }
-  });
-</script>
+
+    function setStatus(text) {
+      document.getElementById("statusText").textContent = text;
+    }
+
+    function onSheetChange(e) {
+      currentSheet = e.target.value;
+      allRows = icdRaw[currentSheet] || [];
+      document.getElementById("searchInput").value = "";
+      setStatus(`已切換到「${currentSheet}」，共 ${allRows.length} 筆。`);
+      renderTable(allRows.slice(0, 200));
+    }
+
+    function onSearchInput() {
+      const keyword = document.getElementById("searchInput").value.trim().toLowerCase();
+      const mode = document.getElementById("modeSelect").value;
+
+      if (!keyword) {
+        setStatus(`顯示「${currentSheet}」前 200 筆，共 ${allRows.length} 筆。`);
+        renderTable(allRows.slice(0, 200));
+        return;
+      }
+
+      let filtered;
+      if (mode === "code") {
+        // 嘗試抓「Code」欄位，沒有就 fallback
+        filtered = allRows.filter(row => {
+          const keys = Object.keys(row);
+          const codeKey = keys.find(k => k.toLowerCase().includes("code")) || keys[0];
+          const val = row[codeKey];
+          return val && String(val).toLowerCase().startsWith(keyword);
+        });
+      } else {
+        // all：所有欄位做模糊搜尋
+        filtered = allRows.filter(row => {
+          return Object.values(row).some(v => {
+            if (v === null || v === undefined) return false;
+            return String(v).toLowerCase().includes(keyword);
+          });
+        });
+      }
+
+      const limited = filtered.slice(0, 200);
+      setStatus(
+        `「${currentSheet}」符合「${keyword}」的有 ${filtered.length} 筆，顯示前 ${limited.length} 筆。`
+      );
+      renderTable(limited);
+    }
+
+    // 簡單 debounce，避免每打一個字就觸發太多次
+    function debounce(fn, delay) {
+      let timer = null;
+      return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+      };
+    }
+
+    // 根據資料動態畫表格
+    function renderTable(rows) {
+      const container = document.getElementById("tableContainer");
+      container.innerHTML = "";
+
+      if (!rows || rows.length === 0) {
+        const div = document.createElement("div");
+        div.className = "no-data";
+        div.textContent = "目前沒有可顯示的資料。";
+        container.appendChild(div);
+        return;
+      }
+
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const tbody = document.createElement("tbody");
+
+      const keys = Object.keys(rows[0] || {});
+      const trHead = document.createElement("tr");
+      keys.forEach(k => {
+        const th = document.createElement("th");
+        th.textContent = k;
+        trHead.appendChild(th);
+      });
+      thead.appendChild(trHead);
+
+      rows.forEach(row => {
+        const tr = document.createElement("tr");
+        keys.forEach((k, idx) => {
+          const td = document.createElement("td");
+          const val = row[k];
+          if (idx === 0) {
+            td.className = "code-cell";
+          } else {
+            td.className = "desc-cell";
+          }
+          td.textContent = val === null || val === undefined ? "" : String(val);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      container.appendChild(table);
+    }
+
+    // 啟動
+    loadICDJson();
+  </script>
 </body>
 </html>
