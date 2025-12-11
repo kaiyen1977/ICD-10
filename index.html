@@ -2,305 +2,230 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>ICD-10 查詢（JSON 版）</title>
+  <title>ICD-10 工具總入口</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <style>
+    * { box-sizing: border-box; }
+
     body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       margin: 0;
-      padding: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+        "PingFang TC", "Microsoft JhengHei", sans-serif;
       background: #f5f5f7;
-      color: #222;
-    }
-    header {
-      padding: 16px 24px;
-      background: #111827;
-      color: #fff;
-    }
-    header h1 {
-      margin: 0;
-      font-size: 1.4rem;
-    }
-    header p {
-      margin: 4px 0 0;
-      font-size: 0.9rem;
-      opacity: 0.8;
-    }
-    main {
-      padding: 16px 24px 40px;
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-    .toolbar {
+      color: #111827;
+      min-height: 100vh;
       display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-      margin-bottom: 16px;
+      flex-direction: column;
     }
-    .toolbar label {
-      font-size: 0.9rem;
-      color: #374151;
-    }
-    .toolbar input[type="text"] {
-      padding: 6px 10px;
-      border-radius: 6px;
-      border: 1px solid #d1d5db;
-      min-width: 260px;
-      font-size: 0.95rem;
-    }
-    .toolbar select {
-      padding: 6px 10px;
-      border-radius: 6px;
-      border: 1px solid #d1d5db;
-      font-size: 0.9rem;
-      background: #fff;
-    }
-    .toolbar .small {
-      font-size: 0.8rem;
-      color: #6b7280;
-    }
-    .status {
-      margin-bottom: 8px;
-      font-size: 0.85rem;
-      color: #6b7280;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: #fff;
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
-    }
-    thead {
+
+    header {
+      padding: 12px 20px;
       background: #111827;
       color: #f9fafb;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
     }
-    th, td {
-      padding: 8px 10px;
-      border-bottom: 1px solid #e5e7eb;
-      font-size: 0.85rem;
-      text-align: left;
-      vertical-align: top;
-    }
-    th {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-    }
-    tr:nth-child(even) td {
-      background: #f9fafb;
-    }
-    .code-cell {
-      white-space: nowrap;
+
+    header h1 {
+      margin: 0;
+      font-size: 1.2rem;
       font-weight: 600;
+    }
+
+    header .sub {
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    main {
+      flex: 1;
+      max-width: 1100px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .intro {
+      background: #fff;
+      border-radius: 12px;
+      padding: 12px 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      font-size: 0.9rem;
+      color: #4b5563;
+    }
+
+    .intro strong {
       color: #111827;
     }
-    .desc-cell {
-      max-width: 480px;
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(220px,1fr));
+      gap: 16px;
     }
-    .desc-cell small {
-      display: block;
+
+    .card {
+      background: #ffffff;
+      border-radius: 14px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      border: 1px solid #d1d5db;
+      color: #4b5563;
+    }
+
+    .card p {
+      margin: 0;
+      font-size: 0.85rem;
+      color: #4b5563;
+      line-height: 1.4;
+    }
+
+    .datasrc {
+      font-size: 0.75rem;
       color: #6b7280;
+      margin-top: 4px;
     }
-    .no-data {
-      padding: 24px;
-      text-align: center;
+
+    .card a {
+      margin-top: 8px;
+      align-self: flex-start;
+      text-decoration: none;
+      font-size: 0.85rem;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid #2563eb;
+      color: #ffffff;
+      background: #2563eb;
+      cursor: pointer;
+    }
+
+    .card a:hover {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+    }
+
+    footer {
+      font-size: 0.75rem;
       color: #9ca3af;
-      font-size: 0.9rem;
+      text-align: center;
+      padding: 8px 16px 12px;
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>ICD-10 查詢（使用 icd-10.json）</h1>
-    <p>支援依代碼 / 關鍵字模糊搜尋，資料從 JSON 載入，不再在前端解析 Excel。</p>
+    <div>
+      <h1>ICD-10 工具總入口</h1>
+      <div class="sub">ICD-10-CM 診斷索引、腫瘤表、藥物中毒表、外因表、PCS 一站式入口</div>
+    </div>
   </header>
 
   <main>
-    <div class="toolbar">
-      <label>
-        搜尋：
-        <input
-          type="text"
-          id="searchInput"
-          placeholder="輸入代碼或說明關鍵字，例如：A41、敗血症、肺炎..."
-        />
-      </label>
+    <section class="intro">
+      <p>
+        這個 INDEX 頁面只是<strong>總入口</strong>，點選下方卡片會開啟對應的工具頁。
+        每個工具頁會各自從對應的 JSON 檔載入資料，例如：
+        <strong>icd10_idx.json、icd10_desc.json、neoplasms.json、drug_idx.json、external_idx.json</strong> 等。
+      </p>
+      <p style="margin-top:4px;">
+        建議所有 <code>.HTML</code> 及 <code>.json</code> 檔案都放在同一個資料夾，以方便 GitHub Pages / Chrome 外掛使用。
+      </p>
+    </section>
 
-      <label>
-        資料表（Sheet）：
-        <select id="sheetSelect"></select>
-      </label>
+    <section class="grid">
+      <!-- ICD-10-CM -->
+      <article class="card">
+        <h2>ICD-10-CM 診斷索引</h2>
+        <span class="tag">Diagnosis Index</span>
+        <p>
+          依代碼或關鍵字查詢 ICD-10-CM 診斷。可搭配說明檔顯示完整敘述、Excludes、Includes 等資訊。
+        </p>
+        <div class="datasrc">
+          資料來源：<code>icd10_idx.json</code>（索引）＋ <code>icd10_desc.json</code>（詳細說明）
+        </div>
+        <a href="ICD-10-CM.html">開啟診斷索引</a>
+      </article>
 
-      <label>
-        筛選方式：
-        <select id="modeSelect">
-          <option value="all">全部欄位模糊搜尋</option>
-          <option value="code">只比對代碼開頭（Code starts with）</option>
-        </select>
-      </label>
+      <!-- Neoplasms -->
+      <article class="card">
+        <h2>腫瘤表 Neoplasms</h2>
+        <span class="tag">Neoplasms Table</span>
+        <p>
+          依部位與良惡性（malignant, benign, in situ, uncertain, unspecified）查詢對應腫瘤代碼。
+        </p>
+        <div class="datasrc">
+          資料來源：<code>neoplasms.json</code>
+        </div>
+        <a href="NEOPLASMS.html">開啟腫瘤表</a>
+      </article>
 
-      <span class="small">※ 目前先顯示前 200 筆結果，避免一次載入過多太卡。</span>
-    </div>
+      <!-- Drug / Poisoning -->
+      <article class="card">
+        <h2>藥物與中毒表</h2>
+        <span class="tag">Drug / Poisoning Index</span>
+        <p>
+          依藥物或物質查詢不良反應、中毒、自殺、攻擊、未明等對應代碼。
+        </p>
+        <div class="datasrc">
+          資料來源：<code>drug_idx.json</code>
+        </div>
+        <a href="DRUG.html">開啟藥物表</a>
+      </article>
 
-    <div class="status" id="statusText">載入中...</div>
+      <!-- External Causes -->
+      <article class="card">
+        <h2>外因表 External Causes</h2>
+        <span class="tag">External Causes Index</span>
+        <p>
+          依意外事件、環境因素等關鍵字查詢對應外因代碼（跌倒、交通事故、暴力、自殺等）。
+        </p>
+        <div class="datasrc">
+          資料來源：<code>external_idx.json</code>
+        </div>
+        <a href="EXTERNAL.html">開啟外因表</a>
+      </article>
 
-    <div id="tableContainer"></div>
+      <!-- PCS -->
+      <article class="card">
+        <h2>ICD-10-PCS 處置／手術</h2>
+        <span class="tag">Procedures (PCS)</span>
+        <p>
+          依Section、Body System、Root Operation、Approach 等要素，查詢對應 ICD-10-PCS 處置代碼。
+        </p>
+        <div class="datasrc">
+          資料來源：PCS 專用 JSON（例如 <code>pcs_idx.json</code> 或其他命名，之後可自行補上）
+        </div>
+        <a href="PCS.html">開啟 PCS 工具</a>
+      </article>
+    </section>
   </main>
 
-  <script>
-    let icdRaw = null;       // 原始整個 JSON { sheetName: [rows...] }
-    let currentSheet = null; // 目前選擇的 sheet 名稱
-    let allRows = [];        // 目前 sheet 的所有列
-
-    // 1. 一開始載入 JSON
-    async function loadICDJson() {
-      try {
-        const res = await fetch("icd-10.json");
-        if (!res.ok) throw new Error("載入失敗：" + res.status);
-        icdRaw = await res.json();
-
-        const sheetNames = Object.keys(icdRaw);
-        if (sheetNames.length === 0) {
-          setStatus("icd-10.json 內沒有任何工作表資料。");
-          return;
-        }
-
-        // 填滿 sheet 下拉選單
-        const sheetSelect = document.getElementById("sheetSelect");
-        sheetSelect.innerHTML = "";
-        sheetNames.forEach((name, idx) => {
-          const opt = document.createElement("option");
-          opt.value = name;
-          opt.textContent = name;
-          sheetSelect.appendChild(opt);
-        });
-
-        // 預設選第一個 sheet（你如果想固定用某一張，例如 ICD10Tab，可以改這裡）
-        currentSheet = sheetNames[0];
-        sheetSelect.value = currentSheet;
-
-        allRows = icdRaw[currentSheet] || [];
-        setStatus(`已載入工作表「${currentSheet}」，共 ${allRows.length} 筆。`);
-        renderTable(allRows.slice(0, 200));
-
-        // 綁定事件
-        sheetSelect.addEventListener("change", onSheetChange);
-        document.getElementById("searchInput").addEventListener("input", debounce(onSearchInput, 200));
-        document.getElementById("modeSelect").addEventListener("change", onSearchInput);
-      } catch (err) {
-        console.error(err);
-        setStatus("載入 icd-10.json 時發生錯誤：" + err.message);
-      }
-    }
-
-    function setStatus(text) {
-      document.getElementById("statusText").textContent = text;
-    }
-
-    function onSheetChange(e) {
-      currentSheet = e.target.value;
-      allRows = icdRaw[currentSheet] || [];
-      document.getElementById("searchInput").value = "";
-      setStatus(`已切換到「${currentSheet}」，共 ${allRows.length} 筆。`);
-      renderTable(allRows.slice(0, 200));
-    }
-
-    function onSearchInput() {
-      const keyword = document.getElementById("searchInput").value.trim().toLowerCase();
-      const mode = document.getElementById("modeSelect").value;
-
-      if (!keyword) {
-        setStatus(`顯示「${currentSheet}」前 200 筆，共 ${allRows.length} 筆。`);
-        renderTable(allRows.slice(0, 200));
-        return;
-      }
-
-      let filtered;
-      if (mode === "code") {
-        // 嘗試抓「Code」欄位，沒有就 fallback
-        filtered = allRows.filter(row => {
-          const keys = Object.keys(row);
-          const codeKey = keys.find(k => k.toLowerCase().includes("code")) || keys[0];
-          const val = row[codeKey];
-          return val && String(val).toLowerCase().startsWith(keyword);
-        });
-      } else {
-        // all：所有欄位做模糊搜尋
-        filtered = allRows.filter(row => {
-          return Object.values(row).some(v => {
-            if (v === null || v === undefined) return false;
-            return String(v).toLowerCase().includes(keyword);
-          });
-        });
-      }
-
-      const limited = filtered.slice(0, 200);
-      setStatus(
-        `「${currentSheet}」符合「${keyword}」的有 ${filtered.length} 筆，顯示前 ${limited.length} 筆。`
-      );
-      renderTable(limited);
-    }
-
-    // 簡單 debounce，避免每打一個字就觸發太多次
-    function debounce(fn, delay) {
-      let timer = null;
-      return function (...args) {
-        clearTimeout(timer);
-        timer = setTimeout(() => fn.apply(this, args), delay);
-      };
-    }
-
-    // 根據資料動態畫表格
-    function renderTable(rows) {
-      const container = document.getElementById("tableContainer");
-      container.innerHTML = "";
-
-      if (!rows || rows.length === 0) {
-        const div = document.createElement("div");
-        div.className = "no-data";
-        div.textContent = "目前沒有可顯示的資料。";
-        container.appendChild(div);
-        return;
-      }
-
-      const table = document.createElement("table");
-      const thead = document.createElement("thead");
-      const tbody = document.createElement("tbody");
-
-      const keys = Object.keys(rows[0] || {});
-      const trHead = document.createElement("tr");
-      keys.forEach(k => {
-        const th = document.createElement("th");
-        th.textContent = k;
-        trHead.appendChild(th);
-      });
-      thead.appendChild(trHead);
-
-      rows.forEach(row => {
-        const tr = document.createElement("tr");
-        keys.forEach((k, idx) => {
-          const td = document.createElement("td");
-          const val = row[k];
-          if (idx === 0) {
-            td.className = "code-cell";
-          } else {
-            td.className = "desc-cell";
-          }
-          td.textContent = val === null || val === undefined ? "" : String(val);
-          tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-      });
-
-      table.appendChild(thead);
-      table.appendChild(tbody);
-      container.appendChild(table);
-    }
-
-    // 啟動
-    loadICDJson();
-  </script>
+  <footer>
+    本工具僅供內部教學與輔助使用，實際申報請依健保規定與官方 ICD-10 指南。
+  </footer>
 </body>
 </html>
